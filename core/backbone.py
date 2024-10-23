@@ -342,7 +342,7 @@ class Backbone_Reconstruction(nn.Module):
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
                 net, up_mask, delta_flow, recon_depth = self.update_block(net, inp, corr, flow, fmap1)
-
+            
             # if itr == iters - 1:
             #     feature_visualizer(recon_depth[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_recon_depth")
 
@@ -353,15 +353,13 @@ class Backbone_Reconstruction(nn.Module):
             # upsample predictions
             if up_mask is None:
                 flow_up = upflow8(coords1 - coords0)
-                recon_depth_up = upflow8(recon_depth_up)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
-                recon_depth_up = self.upsample_depth(recon_depth, up_mask)
 
             flow_predictions.append(flow_up)
-            depth_predictions.append(recon_depth_up)
+            depth_predictions.append(recon_depth)
 
         if test_mode:
-            return flow_up, recon_depth_up
+            return flow_up, recon_depth
             
         return flow_predictions, depth_predictions

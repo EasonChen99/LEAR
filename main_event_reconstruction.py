@@ -123,6 +123,9 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=600, w=960)
         event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
 
+        # original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
+        # cv2.imwrite(f'./visualization/input/{i_batch:05d}_event.png', original_overlay)
+
         end = time.time()
         flow_up, recon_depth_up = model(lidar_input, event_input, iters=24, test_mode=True, idx=i_batch)
 
@@ -151,7 +154,8 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
                 err_t_list.append(err_t.item())
             print(f"{i_batch:05d}: {np.mean(err_t_list):.5f} {np.mean(err_r_list):.5f} {np.median(err_t_list):.5f} "
                   f"{np.median(err_r_list):.5f} {len(outliers)} {Time / (i_batch+1):.5f}")
-        
+
+
 
         # original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :])
         # cv2.imwrite(f'./visualization/overlay/{i_batch:05d}_depth_1_ori.png', original_overlay)
@@ -169,6 +173,9 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
         cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png', original_depth)
         recon_depth = overlay_imgs(event_input[0, :, :, :]*0, recon_depth_up[0, 0, :, :].detach())
+        # recon_depth = recon_depth_up[0, 0, :, :].detach().cpu().numpy()
+        # recon_depth = (recon_depth - np.min(recon_depth)) / (np.max(recon_depth) - np.min(recon_depth))
+        # recon_depth = (recon_depth * 255).astype(np.uint8)
         cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png', recon_depth)
 
         

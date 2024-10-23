@@ -12,17 +12,60 @@ class FlowHead(nn.Module):
     def forward(self, x):
         return self.conv2(self.relu(self.conv1(x)))
 
+# class DepthHead(nn.Module):
+#     def __init__(self, input_dim=128+256, hidden_dim=512, output_dim=1):
+#         super(DepthHead, self).__init__()
+#         self.conv1 = nn.Conv2d(input_dim, hidden_dim, 3, padding=1)
+#         self.conv2 = nn.Conv2d(hidden_dim, output_dim, 3, padding=1)
+#         self.relu = nn.ReLU(inplace=True)
+#         self.sigmoid = nn.Sigmoid()
+
+#     def forward(self, x, d):
+#         x = torch.cat((x, d), dim=1)
+#         return self.sigmoid(self.conv2(self.relu(self.conv1(x))))
+
 class DepthHead(nn.Module):
-    def __init__(self, input_dim=128+256, hidden_dim=512, output_dim=1):
+    def __init__(self, input_dim=128+256, output_dim=1):
         super(DepthHead, self).__init__()
-        self.conv1 = nn.Conv2d(input_dim, hidden_dim, 3, padding=1)
-        self.conv2 = nn.Conv2d(hidden_dim, output_dim, 3, padding=1)
-        self.relu = nn.ReLU(inplace=True)
+        self.upconv1 = nn.ConvTranspose2d(in_channels=384, out_channels=128, kernel_size=4, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)  # Regular convolution for refinement
+        self.relu1 = nn.ReLU()
+
+        self.upconv2 = nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+        self.relu2 = nn.ReLU()
+
+        self.upconv3 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+        self.relu3 = nn.ReLU()
+
+        self.final_conv = nn.Conv2d(32, output_dim, kernel_size=3, stride=1, padding=1)
+
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x, d):
         x = torch.cat((x, d), dim=1)
-        return self.sigmoid(self.conv2(self.relu(self.conv1(x))))
+
+        # Upsample 1: 30x40 -> 60x80
+        x = self.upconv1(x)
+        x = self.conv1(x)
+        x = self.relu1(x)
+        
+        # Upsample 2: 60x80 -> 120x160
+        x = self.upconv2(x)
+        x = self.conv2(x)
+        x = self.relu2(x)
+        
+        # Upsample 3: 120x160 -> 240x320
+        x = self.upconv3(x)
+        x = self.conv3(x)
+        x = self.relu3(x)
+
+        # Final layer to get output of size Bx1x240x320
+        x = self.sigmoid(self.final_conv(x))
+        
+        return x
+
 
 class ConvGRU(nn.Module):
     def __init__(self, hidden_dim=128, input_dim=192+128):
@@ -126,7 +169,7 @@ class MTUpdateBlock(nn.Module):
         self.encoder = BasicMotionEncoder(args)
         self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=128+hidden_dim)
         self.flow_head = FlowHead(hidden_dim, hidden_dim=256, output_dim=2)
-        self.depth_head = DepthHead(hidden_dim+256, hidden_dim=512, output_dim=1)
+        self.depth_head = DepthHead(hidden_dim+256, output_dim=1)
 
 
         self.mask = nn.Sequential(

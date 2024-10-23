@@ -43,10 +43,15 @@ def sequence_loss(flow_preds, flow_gt, gamma=0.8, MAX_FLOW=400):
 def DepthConsistLoss(source_depth_maps, target_depth_map, gamma=0.8):
     n_predictions = len(source_depth_maps)
     loss = 0.0
+    target_depth_map = target_depth_map * 2 - 1
     for i in range(n_predictions):
         i_weight = gamma ** (n_predictions - i - 1)
         source_depth_map = source_depth_maps[i]
         mask = source_depth_map > 0
+
+        source_depth_map = source_depth_map * 2 - 1.
+        # print("source_depth_map: ", torch.min(source_depth_map), torch.max(source_depth_map))
+        # print("target_depth_map: ", torch.min(target_depth_map), torch.max(target_depth_map))
 
         loss_n = torch.sum(torch.abs((source_depth_map - target_depth_map) * mask), dim=[1,2,3]) / (torch.sum(mask, dim=[1,2,3]) + 1.)
 
