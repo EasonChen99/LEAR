@@ -16,6 +16,7 @@ from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_m
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
 from core.losses import sequence_loss, DepthReconLoss, ChamferLossOneWay2D
+from core.flow_viz import flow_to_image
 
 occlusion_kernel = 5
 occlusion_threshold = 3
@@ -85,15 +86,13 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
 
 
         optimizer.zero_grad()
-        flow_preds, depth_predictions = model(lidar_input, event_input, iters=args.iters)
+        flow_preds, depth_mask = model(lidar_input, event_input, iters=args.iters)
         loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-        loss_recon = DepthReconLoss(depth_predictions, lidar_input)
-        metrics['recon_loss'] = loss_recon.item()
-        loss_consist = ChamferLossOneWay2D(depth_predictions, flow_preds, event_input)
+        loss_consist = ChamferLossOneWay2D(depth_mask * lidar_input, flow_preds, event_input)
         metrics['consist_loss'] = loss_consist.item()
 
 
-        loss = 10 * loss_consist + loss_flow + 100 * loss_recon
+        loss = 10 * loss_consist + loss_flow
 
 
         scaler.scale(loss).backward()
@@ -128,7 +127,7 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         # cv2.imwrite(f'./visualization/input/{i_batch:05d}_event.png', original_overlay)
 
         end = time.time()
-        flow_up, recon_depth_up = model(lidar_input, event_input, iters=24, test_mode=True, idx=i_batch)
+        flow_up, depth_mask = model(lidar_input, event_input, iters=24, test_mode=True, idx=i_batch)
 
         epe = torch.sum((flow_up - flow_gt) ** 2, dim=1).sqrt()
         mag = torch.sum(flow_gt ** 2, dim=1).sqrt()
@@ -172,13 +171,11 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         # pred_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input_pred[0, 0, :, :])
         # cv2.imwrite(f'./visualization/overlay/{i_batch:05d}_depth_2_pred.png', pred_overlay)
 
-        # original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
-        # cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png', original_depth)
-        # recon_depth = overlay_imgs(event_input[0, :, :, :]*0, recon_depth_up[0, 0, :, :].detach())
-        # # recon_depth = recon_depth_up[0, 0, :, :].detach().cpu().numpy()
-        # # recon_depth = (recon_depth - np.min(recon_depth)) / (np.max(recon_depth) - np.min(recon_depth))
-        # # recon_depth = (recon_depth * 255).astype(np.uint8)
-        # cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png', recon_depth)
+        original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png', original_depth)
+        mask_lidar_input = depth_mask * lidar_input
+        recon_depth = overlay_imgs(event_input[0, :, :, :]*0, mask_lidar_input[0, 0, :, :].detach())
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png', recon_depth)
 
         # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
         # if vis_event_time_image.shape[2] == 1:
@@ -188,14 +185,17 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         # vis_event_time_image = vis_event_time_image[:, :, :3]
         # cv2.imwrite(f"./visualization/event/{i_batch:05d}_event.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
         
-        plt.figure()
-        plt.imshow(lidar_input[0, 0, ...].cpu().detach().numpy())
-        plt.savefig(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png')
-        plt.close()
-        plt.figure()
-        plt.imshow(recon_depth_up[0, 0, :, :].detach().cpu().numpy())
-        plt.savefig(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png')
-        plt.close()
+        # plt.figure()
+        # plt.imshow(lidar_input[0, 0, ...].cpu().detach().numpy())
+        # plt.savefig(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png')
+        # plt.close()
+        # plt.figure()
+        # plt.imshow(recon_depth_up[0, 0, :, :].detach().cpu().numpy())
+        # plt.savefig(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png')
+        # plt.close()
+
+        # flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
+        # cv2.imwrite(f"./visualization/flow/{i_batch:05d}_flow.png", flow_viz)
         
     epe_list = np.array(epe_list)
     out_list = np.concatenate(out_list)

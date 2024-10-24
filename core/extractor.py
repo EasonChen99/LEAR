@@ -193,9 +193,10 @@ class BasicEncoder_Event(nn.Module):
 
 
 class BasicEncoder_LiDAR(nn.Module):
-    def __init__(self, output_dim=128, norm_fn='batch', dropout=0.0):
+    def __init__(self, output_dim=128, norm_fn='batch', dropout=0.0, return_all_layers=False):
         super(BasicEncoder_LiDAR, self).__init__()
         self.norm_fn = norm_fn
+        self.return_all_layers = return_all_layers
 
         if self.norm_fn == 'group':
             self.norm1 = nn.GroupNorm(num_groups=8, num_channels=64)
@@ -249,30 +250,23 @@ class BasicEncoder_LiDAR(nn.Module):
             batch_dim = x[0].shape[0]
             x = torch.cat(x, dim=0)
 
-        # if i_batch is not None:
-        #     import cv2
-        #     import seaborn
-        #     import matplotlib.pyplot as plt
-        #     import numpy as np
-        #     heatmap = seaborn.heatmap(mask[0, 0, :, :].cpu().detach().numpy(), xticklabels=False, yticklabels=False, cbar=False, square=True, robust=True, cmap='gist_rainbow')
-        #     figure = heatmap.get_figure()
-        #     figure.savefig(f"./images/output/{i_batch:06d}_heatmap.png")
-        #     plt.close()
+        One = self.conv1(x)  # 160 480 64
 
-        x = self.conv1(x)  # 160 480 64
+        One = self.norm1(One)
+        One = self.relu1(One)
+        Two = self.layer1(One)  # 160 480 64
+        Three = self.layer2(Two)  # 80 240 96
+        Four = self.layer3(Three)  # 40 120 128
 
-        x = self.norm1(x)
-        x = self.relu1(x)
-        x = self.layer1(x)  # 160 480 64
-        x = self.layer2(x)  # 80 240 96
-        x = self.layer3(x)  # 40 120 128
-
-        x = self.conv2(x)  # 40 120 128
+        Five = self.conv2(Four)  # 40 120 128
 
         if self.training and self.dropout is not None:
-            x = self.dropout(x)
+            Five = self.dropout(Five)
 
         if is_list:
-            x = torch.split(x, [batch_dim, batch_dim], dim=0)
+            Five = torch.split(Five, [batch_dim, batch_dim], dim=0)
 
-        return x
+        if not self.return_all_layers:
+            return Five
+        else:
+            return One, Two, Three, Four, Five

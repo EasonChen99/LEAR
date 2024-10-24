@@ -60,14 +60,13 @@ def DepthReconLoss(source_depth_maps, target_depth_map, gamma=0.8):
     return loss
 
 
-def ChamferLossOneWay2D(source_depth_maps, flow_preds, target_event_frame, gamma=0.8):
+def ChamferLossOneWay2D(source_depth_map, flow_preds, target_event_frame, gamma=0.8):
     
-    n_predictions = len(source_depth_maps)
+    n_predictions = len(flow_preds)
     loss = 0.0
     for i in range(n_predictions):
         i_weight = gamma ** (n_predictions - i - 1)
 
-        source_depth_map = source_depth_maps[i]
         source_depth_map = warp(source_depth_map, -1 * flow_preds[i])
 
         B, _, H, W = source_depth_map.shape

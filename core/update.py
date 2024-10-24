@@ -26,47 +26,79 @@ class FlowHead(nn.Module):
 #         x = torch.cat((x, d), dim=1)
 #         return self.sigmoid(self.conv2(self.relu(self.conv1(x))))
 
-class DepthHead(nn.Module):
-    def __init__(self, input_dim=128+256, output_dim=1):
-        super(DepthHead, self).__init__()
-        self.upconv1 = nn.ConvTranspose2d(in_channels=384, out_channels=128, kernel_size=4, stride=2, padding=1)
-        self.conv1 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)  # Regular convolution for refinement
-        self.relu1 = nn.ReLU()
+# class DepthHead(nn.Module):
+#     def __init__(self, input_dim=128+256, output_dim=1):
+#         super(DepthHead, self).__init__()
+#         self.upconv1 = nn.ConvTranspose2d(in_channels=384, out_channels=128, kernel_size=4, stride=2, padding=1)
+#         self.conv1 = nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1)  # Regular convolution for refinement
+#         self.relu1 = nn.ReLU()
 
-        self.upconv2 = nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
-        self.relu2 = nn.ReLU()
+#         self.upconv2 = nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1)
+#         self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
+#         self.relu2 = nn.ReLU()
 
-        self.upconv3 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
-        self.relu3 = nn.ReLU()
+#         self.upconv3 = nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2, padding=1)
+#         self.conv3 = nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1)
+#         self.relu3 = nn.ReLU()
 
-        self.final_conv = nn.Conv2d(32, output_dim, kernel_size=3, stride=1, padding=1)
+#         self.final_conv = nn.Conv2d(32, output_dim, kernel_size=3, stride=1, padding=1)
 
-        self.sigmoid = nn.Sigmoid()
+#         self.sigmoid = nn.Sigmoid()
 
-    def forward(self, x, d):
-        x = torch.cat((x, d), dim=1)
+#     def forward(self, x, d):
+#         x = torch.cat((x, d), dim=1)
 
-        # Upsample 1: 30x40 -> 60x80
-        x = self.upconv1(x)
-        x = self.conv1(x)
-        x = self.relu1(x)
+#         # Upsample 1: 30x40 -> 60x80
+#         x = self.upconv1(x)
+#         x = self.conv1(x)
+#         x = self.relu1(x)
         
-        # Upsample 2: 60x80 -> 120x160
-        x = self.upconv2(x)
-        x = self.conv2(x)
-        x = self.relu2(x)
+#         # Upsample 2: 60x80 -> 120x160
+#         x = self.upconv2(x)
+#         x = self.conv2(x)
+#         x = self.relu2(x)
         
-        # Upsample 3: 120x160 -> 240x320
-        x = self.upconv3(x)
-        x = self.conv3(x)
-        x = self.relu3(x)
+#         # Upsample 3: 120x160 -> 240x320
+#         x = self.upconv3(x)
+#         x = self.conv3(x)
+#         x = self.relu3(x)
 
-        # Final layer to get output of size Bx1x240x320
-        x = self.sigmoid(self.final_conv(x))
+#         # Final layer to get output of size Bx1x240x320
+#         x = self.sigmoid(self.final_conv(x))
         
-        return x
+#         return x
+
+
+class DepthMaskHead(nn.Module):
+    def __init__(self, input_dim=256, output_dim=1, output_size=(296,512)):
+        super(DepthMaskHead, self).__init__()
+        self.output_size = output_size
+        self.netScoreOne = torch.nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, stride=1, padding=0)
+        self.netScoreTwo = torch.nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, stride=1, padding=0)
+        self.netScoreThr = torch.nn.Conv2d(in_channels=96, out_channels=1, kernel_size=1, stride=1, padding=0)
+        self.netScoreFou = torch.nn.Conv2d(in_channels=128, out_channels=1, kernel_size=1, stride=1, padding=0)
+        self.netScoreFiv = torch.nn.Conv2d(in_channels=256, out_channels=1, kernel_size=1, stride=1, padding=0)
+
+        self.netCombine = torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels=5, out_channels=1, kernel_size=1, stride=1, padding=0),
+            torch.nn.Sigmoid()
+        )
+    
+    def forward(self, fmap_one, fmap_two, fmap_three, fmap_four, fmap_five):
+
+        fmap_one = self.netScoreOne(fmap_one)
+        fmap_two = self.netScoreTwo(fmap_two)
+        fmap_three = self.netScoreThr(fmap_three)
+        fmap_four = self.netScoreFou(fmap_four)
+        fmap_five = self.netScoreFiv(fmap_five)
+
+        fmap_one = torch.nn.functional.interpolate(input=fmap_one, size=self.output_size, mode='bilinear', align_corners=False)
+        fmap_two = torch.nn.functional.interpolate(input=fmap_two, size=self.output_size, mode='bilinear', align_corners=False)
+        fmap_three = torch.nn.functional.interpolate(input=fmap_three, size=self.output_size, mode='bilinear', align_corners=False)
+        fmap_four = torch.nn.functional.interpolate(input=fmap_four, size=self.output_size, mode='bilinear', align_corners=False)
+        fmap_five = torch.nn.functional.interpolate(input=fmap_five, size=self.output_size, mode='bilinear', align_corners=False)
+
+        return self.netCombine(torch.cat([ fmap_one, fmap_two, fmap_three, fmap_four, fmap_five], 1))
 
 
 class ConvGRU(nn.Module):
@@ -171,15 +203,13 @@ class MTUpdateBlock(nn.Module):
         self.encoder = BasicMotionEncoder(args)
         self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=128+hidden_dim)
         self.flow_head = FlowHead(hidden_dim, hidden_dim=256, output_dim=2)
-        self.depth_head = DepthHead(hidden_dim+256, output_dim=1)
-
 
         self.mask = nn.Sequential(
             nn.Conv2d(128, 256, 3, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(256, 64*9, 1, padding=0))
 
-    def forward(self, net, inp, corr, flow, depth_feature, upsample=True):
+    def forward(self, net, inp, corr, flow, upsample=True):
         motion_features = self.encoder(flow, corr)
         inp = torch.cat([inp, motion_features], dim=1)
 
@@ -187,9 +217,7 @@ class MTUpdateBlock(nn.Module):
 
         delta_flow = self.flow_head(net)
 
-        recon_depth = self.depth_head(net, depth_feature)
-
         # scale mask to balence gradients
         mask = .25 * self.mask(net)
 
-        return net, mask, delta_flow, recon_depth
+        return net, mask, delta_flow

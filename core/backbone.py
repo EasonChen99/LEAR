@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from core.update import BasicUpdateBlock, MTUpdateBlock
+from core.update import BasicUpdateBlock, MTUpdateBlock, DepthMaskHead
 from core.extractor import BasicEncoder_Event, BasicEncoder_LiDAR
 from core.corr import CorrBlock, AlternateCorrBlock
 from core.utils import coords_grid, upflow8, feature_visualizer
@@ -208,9 +208,11 @@ class Backbone_Reconstruction(nn.Module):
 
         # feature network, context network, and update block
         self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
-        self.fnet_lidar = BasicEncoder_LiDAR(output_dim=256, norm_fn='instance', dropout=args.dropout)
+        self.fnet_lidar = BasicEncoder_LiDAR(output_dim=256, norm_fn='instance', dropout=args.dropout, return_all_layers=True)
         self.cnet = BasicEncoder_LiDAR(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = MTUpdateBlock(self.args, hidden_dim=hdim)
+        self.depth_mask_head = DepthMaskHead(input_dim=256, output_dim=1, output_size=(296,512))
+
 
     def freeze_bn(self):
         for m in self.modules():
@@ -239,7 +241,6 @@ class Backbone_Reconstruction(nn.Module):
         up_flow = up_flow.permute(0, 1, 4, 2, 5, 3)
         return up_flow.reshape(N, 2, 8 * H, 8 * W)
     
-
     def upsample_depth(self, depth, mask):
         """ Upsample flow field [H/8, W/8, 2] -> [H, W, 2] using convex combination """
         N, _, H, W = depth.shape
@@ -307,13 +308,15 @@ class Backbone_Reconstruction(nn.Module):
 
         # run the feature network
         with autocast(enabled=self.args.mixed_precision):
-            fmap1 = self.fnet_lidar(image1)
+            fmap1_one, fmap1_two, fmap1_three, fmap1_four, fmap1 = self.fnet_lidar(image1)
             fmap2 = self.fnet_event(image2)
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
 
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_recon")
+        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_depth_feature")
+
+        depth_mask = self.depth_mask_head(fmap1_one, fmap1_two, fmap1_three, fmap1_four, fmap1)
 
         if self.args.alternate_corr:
             corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
@@ -333,7 +336,6 @@ class Backbone_Reconstruction(nn.Module):
             coords1 = coords1 + flow_init
 
         flow_predictions = []
-        depth_predictions = []
         for itr in range(iters):
             coords1 = coords1.detach()
 
@@ -341,27 +343,24 @@ class Backbone_Reconstruction(nn.Module):
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
-                net, up_mask, delta_flow, recon_depth = self.update_block(net, inp, corr, flow, fmap1)
+                net, up_mask, delta_flow = self.update_block(net, inp, corr, flow)
             
             # if itr == iters - 1:
-            #     feature_visualizer(recon_depth[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_recon_depth")
+            #     feature_visualizer(up_mask[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_mask")
+            #     feature_visualizer(net[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_net")
 
-            
             # F(t+1) = F(t) + \Delta(t)
             coords1 = coords1 + delta_flow
 
             # upsample predictions
             if up_mask is None:
                 flow_up = upflow8(coords1 - coords0)
-                # recon_depth = upflow8(recon_depth)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
-                # recon_depth = self.upsample_depth(recon_depth, up_mask)
 
             flow_predictions.append(flow_up)
-            depth_predictions.append(recon_depth)
 
         if test_mode:
-            return flow_up, recon_depth
+            return flow_up, depth_mask
             
-        return flow_predictions, depth_predictions
+        return flow_predictions, depth_mask
