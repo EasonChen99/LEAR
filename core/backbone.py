@@ -353,8 +353,10 @@ class Backbone_Reconstruction(nn.Module):
             # upsample predictions
             if up_mask is None:
                 flow_up = upflow8(coords1 - coords0)
+                # recon_depth = upflow8(recon_depth)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
+                # recon_depth = self.upsample_depth(recon_depth, up_mask)
 
             flow_predictions.append(flow_up)
             depth_predictions.append(recon_depth)

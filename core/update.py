@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class FlowHead(nn.Module):
     def __init__(self, input_dim=128, hidden_dim=256, output_dim=2):
         super(FlowHead, self).__init__()
@@ -11,6 +12,7 @@ class FlowHead(nn.Module):
 
     def forward(self, x):
         return self.conv2(self.relu(self.conv1(x)))
+
 
 # class DepthHead(nn.Module):
 #     def __init__(self, input_dim=128+256, hidden_dim=512, output_dim=1):

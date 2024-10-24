@@ -7,6 +7,7 @@ import numpy as np
 import argparse
 import random
 import torch
+import matplotlib.pyplot as plt
 
 from core.datasets_m3ed import DatasetM3ED as Dataset
 from core.backbone import Backbone_Reconstruction as Backbone
@@ -14,7 +15,7 @@ from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import sequence_loss, DepthConsistLoss, ChamferLossOneWay2D
+from core.losses import sequence_loss, DepthReconLoss, ChamferLossOneWay2D
 
 occlusion_kernel = 5
 occlusion_threshold = 3
@@ -86,13 +87,13 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         optimizer.zero_grad()
         flow_preds, depth_predictions = model(lidar_input, event_input, iters=args.iters)
         loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-        loss_recon = DepthConsistLoss(depth_predictions, lidar_input)
+        loss_recon = DepthReconLoss(depth_predictions, lidar_input)
         metrics['recon_loss'] = loss_recon.item()
         loss_consist = ChamferLossOneWay2D(depth_predictions, flow_preds, event_input)
         metrics['consist_loss'] = loss_consist.item()
 
 
-        loss = loss_flow + 100 * loss_recon + 10 * loss_consist    
+        loss = 10 * loss_consist + loss_flow + 100 * loss_recon
 
 
         scaler.scale(loss).backward()
@@ -177,7 +178,21 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         # recon_depth = (recon_depth - np.min(recon_depth)) / (np.max(recon_depth) - np.min(recon_depth))
         # recon_depth = (recon_depth * 255).astype(np.uint8)
         cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png', recon_depth)
-
+        # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
+        # if vis_event_time_image.shape[2] == 1:
+        #     vis_event_time_image = event_input[0,...].permute(1, 2, 0).repeat(1, 1, 3).cpu().numpy()
+        # else:
+        #     vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
+        # vis_event_time_image = vis_event_time_image[:, :, :3]
+        # cv2.imwrite(f"./visualization/event/{i_batch:05d}_event.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
+        # plt.figure()
+        # plt.imshow(lidar_input[0, 0, ...].cpu().detach().numpy())
+        # plt.savefig(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png')
+        # plt.close()
+        # plt.figure()
+        # plt.imshow(recon_depth_up[0, 0, :, :].detach().cpu().numpy())
+        # plt.savefig(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png')
+        # plt.close()
         
     epe_list = np.array(epe_list)
     out_list = np.concatenate(out_list)
