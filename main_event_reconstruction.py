@@ -171,11 +171,15 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         # pred_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input_pred[0, 0, :, :])
         # cv2.imwrite(f'./visualization/overlay/{i_batch:05d}_depth_2_pred.png', pred_overlay)
 
+
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
         cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png', original_depth)
+        depth_mask = depth_mask > torch.median(depth_mask)
         mask_lidar_input = depth_mask * lidar_input
         recon_depth = overlay_imgs(event_input[0, :, :, :]*0, mask_lidar_input[0, 0, :, :].detach())
         cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png', recon_depth)
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_3_mask.png', (depth_mask[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+
 
         # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
         # if vis_event_time_image.shape[2] == 1:

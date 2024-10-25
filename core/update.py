@@ -70,35 +70,55 @@ class FlowHead(nn.Module):
 
 
 class DepthMaskHead(nn.Module):
-    def __init__(self, input_dim=256, output_dim=1, output_size=(296,512)):
+    def __init__(self, output_dim=1, output_size=(296,512)):
         super(DepthMaskHead, self).__init__()
         self.output_size = output_size
-        self.netScoreOne = torch.nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, stride=1, padding=0)
-        self.netScoreTwo = torch.nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, stride=1, padding=0)
+        
+        # self.fuserOne = torch.nn.MultiheadAttention(embed_dim=64, num_heads=1, batch_first=True)
+        # self.fuserTwo = torch.nn.MultiheadAttention(embed_dim=64, num_heads=1, batch_first=True)
+        self.fuserThree = torch.nn.MultiheadAttention(embed_dim=96, num_heads=1, batch_first=True)
+        self.fuserFour = torch.nn.MultiheadAttention(embed_dim=128, num_heads=1, batch_first=True)
+        self.fuserFive = torch.nn.MultiheadAttention(embed_dim=256, num_heads=1, batch_first=True)
+        
+        
+        # self.netScoreOne = torch.nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, stride=1, padding=0)
+        # self.netScoreTwo = torch.nn.Conv2d(in_channels=64, out_channels=1, kernel_size=1, stride=1, padding=0)
         self.netScoreThr = torch.nn.Conv2d(in_channels=96, out_channels=1, kernel_size=1, stride=1, padding=0)
         self.netScoreFou = torch.nn.Conv2d(in_channels=128, out_channels=1, kernel_size=1, stride=1, padding=0)
         self.netScoreFiv = torch.nn.Conv2d(in_channels=256, out_channels=1, kernel_size=1, stride=1, padding=0)
 
         self.netCombine = torch.nn.Sequential(
-            torch.nn.Conv2d(in_channels=5, out_channels=1, kernel_size=1, stride=1, padding=0),
+            torch.nn.Conv2d(in_channels=3, out_channels=1, kernel_size=1, stride=1, padding=0),
             torch.nn.Sigmoid()
         )
     
-    def forward(self, fmap_one, fmap_two, fmap_three, fmap_four, fmap_five):
+    def forward(self, fmap1_one, fmap1_two, fmap1_three, fmap1_four, fmap1_five, fmap2_one, fmap2_two, fmap2_three, fmap2_four, fmap2_five):
+        
+        # fmap_one = torch.cat((fmap1_one,fmap2_one),dim=1)
+        # fmap_two = torch.cat((fmap1_two,fmap2_two),dim=1)
+        # fmap_three = torch.cat((fmap1_three,fmap2_three),dim=1)
+        # fmap_four = torch.cat((fmap1_four,fmap2_four),dim=1)
+        # fmap_five = torch.cat((fmap1_five,fmap2_five),dim=1)
+        B, _, H, W = fmap1_one.shape
+        # fmap_one, _ = self.fuserOne(fmap2_one.view(B, -1, H*W).permute(0, 2, 1), fmap1_one.view(B, -1, H*W).permute(0, 2, 1), fmap1_one.view(B, -1, H*W).permute(0, 2, 1))
+        # fmap_two, _ = self.fuserTwo(fmap2_two.view(B, -1, H*W).permute(0, 2, 1), fmap1_two.view(B, -1, H*W).permute(0, 2, 1), fmap1_two.view(B, -1, H*W).permute(0, 2, 1))
+        fmap_three, _ = self.fuserThree(fmap2_three.view(B, -1, H//2*W//2).permute(0, 2, 1), fmap1_three.view(B, -1, H//2*W//2).permute(0, 2, 1), fmap1_three.view(B, -1, H//2*W//2).permute(0, 2, 1))
+        fmap_four, _ = self.fuserFour(fmap2_four.view(B, -1, H//4*W//4).permute(0, 2, 1), fmap1_four.view(B, -1, H//4*W//4).permute(0, 2, 1), fmap1_four.view(B, -1, H//4*W//4).permute(0, 2, 1))
+        fmap_five, _ = self.fuserFive(fmap2_five.view(B, -1, H//4*W//4).permute(0, 2, 1), fmap1_five.view(B, -1, H//4*W//4).permute(0, 2, 1), fmap1_five.view(B, -1, H//4*W//4).permute(0, 2, 1))
 
-        fmap_one = self.netScoreOne(fmap_one)
-        fmap_two = self.netScoreTwo(fmap_two)
-        fmap_three = self.netScoreThr(fmap_three)
-        fmap_four = self.netScoreFou(fmap_four)
-        fmap_five = self.netScoreFiv(fmap_five)
+        # fmap_one = self.netScoreOne(fmap_one.permute(0, 2, 1).view(B, -1, H, W))
+        # fmap_two = self.netScoreTwo(fmap_two.permute(0, 2, 1).view(B, -1, H, W))
+        fmap_three = self.netScoreThr(fmap_three.permute(0, 2, 1).view(B, -1, H//2, W//2))
+        fmap_four = self.netScoreFou(fmap_four.permute(0, 2, 1).view(B, -1, H//4, W//4))
+        fmap_five = self.netScoreFiv(fmap_five.permute(0, 2, 1).view(B, -1, H//4, W//4))
 
-        fmap_one = torch.nn.functional.interpolate(input=fmap_one, size=self.output_size, mode='bilinear', align_corners=False)
-        fmap_two = torch.nn.functional.interpolate(input=fmap_two, size=self.output_size, mode='bilinear', align_corners=False)
+        # fmap_one = torch.nn.functional.interpolate(input=fmap_one, size=self.output_size, mode='bilinear', align_corners=False)
+        # fmap_two = torch.nn.functional.interpolate(input=fmap_two, size=self.output_size, mode='bilinear', align_corners=False)
         fmap_three = torch.nn.functional.interpolate(input=fmap_three, size=self.output_size, mode='bilinear', align_corners=False)
         fmap_four = torch.nn.functional.interpolate(input=fmap_four, size=self.output_size, mode='bilinear', align_corners=False)
         fmap_five = torch.nn.functional.interpolate(input=fmap_five, size=self.output_size, mode='bilinear', align_corners=False)
 
-        return self.netCombine(torch.cat([ fmap_one, fmap_two, fmap_three, fmap_four, fmap_five], 1))
+        return self.netCombine(torch.cat([ fmap_three, fmap_four, fmap_five], 1))
 
 
 class ConvGRU(nn.Module):

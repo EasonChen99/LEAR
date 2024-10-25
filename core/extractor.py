@@ -115,9 +115,10 @@ class BottleneckBlock(nn.Module):
 
 
 class BasicEncoder_Event(nn.Module):
-    def __init__(self, output_dim=128, norm_fn='batch', dropout=0.0):
+    def __init__(self, output_dim=128, norm_fn='batch', dropout=0.0, return_all_layers=False):
         super(BasicEncoder_Event, self).__init__()
         self.norm_fn = norm_fn
+        self.return_all_layers = return_all_layers
 
         if self.norm_fn == 'group':
             self.norm1 = nn.GroupNorm(num_groups=8, num_channels=64)
@@ -171,25 +172,26 @@ class BasicEncoder_Event(nn.Module):
             batch_dim = x[0].shape[0]
             x = torch.cat(x, dim=0)
 
-        x = self.conv1(x)
-        # import cv2
-        # cv2.imwrite(f"./images/output/image.png", torch.sum(x, dim=1)[0].cpu().detach().numpy()*255)
-        x = self.norm1(x)
-        x = self.relu1(x)
+        One = self.conv1(x)  # 160 480 64
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
+        One = self.norm1(One)
+        One = self.relu1(One)
+        Two = self.layer1(One)  # 160 480 64
+        Three = self.layer2(Two)  # 80 240 96
+        Four = self.layer3(Three)  # 40 120 128
 
-        x = self.conv2(x)
+        Five = self.conv2(Four)  # 40 120 128
 
         if self.training and self.dropout is not None:
-            x = self.dropout(x)
+            Five = self.dropout(Five)
 
         if is_list:
-            x = torch.split(x, [batch_dim, batch_dim], dim=0)
+            Five = torch.split(Five, [batch_dim, batch_dim], dim=0)
 
-        return x
+        if not self.return_all_layers:
+            return Five
+        else:
+            return One, Two, Three, Four, Five
 
 
 class BasicEncoder_LiDAR(nn.Module):
