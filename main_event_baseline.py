@@ -147,10 +147,10 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         
 
         original_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :])
-        cv2.imwrite(f'./visualization/overlay/{i_batch:05d}_depth_1_ori.png', original_overlay)
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png', original_overlay)
         warp_lidar_input = warp(lidar_input, -1*flow_up)
         warp_overlay = overlay_imgs(event_input[0, :, :, :]*0, warp_lidar_input[0, 0, :, :])
-        cv2.imwrite(f'./visualization/overlay/{i_batch:05d}_depth_3_warp.png', warp_overlay)
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_3_warp.png', warp_overlay)
         RT_inv = to_rotation_matrix(R_err[0], T_err[0])
         RT_inv = RT_inv.to(device)
         RT = RT_inv.clone().inverse()
@@ -161,7 +161,7 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         R_composed = quaternion_from_matrix(RT_new)
         _, lidar_input_pred, _, _ = data_generate.push_input(event_frame, pc, [T_composed], [R_composed], device, split='test', h=296, w=512) 
         pred_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input_pred[0, 0, :, :])
-        cv2.imwrite(f'./visualization/overlay/{i_batch:05d}_depth_2_pred.png', pred_overlay)
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_pred.png', pred_overlay)
 
         
     epe_list = np.array(epe_list)

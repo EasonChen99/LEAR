@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from core.update import BasicUpdateBlock, MTUpdateBlock, DepthMaskHead
+from core.update import BasicUpdateBlock, DepthMaskHead
 from core.extractor import BasicEncoder_Event, BasicEncoder_LiDAR
 from core.corr import CorrBlock, AlternateCorrBlock
 from core.utils import coords_grid, upflow8, feature_visualizer
@@ -162,6 +162,7 @@ class Backbone_Event(nn.Module):
             coords1 = coords1.detach()
 
             corr = corr_fn(coords1)  # index correlation volume Bx(9x9x4)xH/8xW/8
+            # feature_visualizer(corr[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_corr")
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
@@ -207,12 +208,11 @@ class Backbone_Reconstruction(nn.Module):
             self.args.alternate_corr = False
 
         # feature network, context network, and update block
-        self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout, return_all_layers=True)
         self.fnet_lidar = BasicEncoder_LiDAR(output_dim=256, norm_fn='instance', dropout=args.dropout, return_all_layers=True)
+        self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
         self.cnet = BasicEncoder_LiDAR(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
-        self.update_block = MTUpdateBlock(self.args, hidden_dim=hdim)
-        self.depth_mask_head = DepthMaskHead(output_dim=1, output_size=(296,512))
-
+        self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
+        self.depth_mask_head = DepthMaskHead(input_dim=324, output_dim=1)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -309,15 +309,10 @@ class Backbone_Reconstruction(nn.Module):
         # run the feature network
         with autocast(enabled=self.args.mixed_precision):
             fmap1_one, fmap1_two, fmap1_three, fmap1_four, fmap1 = self.fnet_lidar(image1)
-            fmap2_one, fmap2_two, fmap2_three, fmap2_four, fmap2 = self.fnet_event(image2)
+            fmap2 = self.fnet_event(image2)
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
-
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_depth_feature")
-
-        depth_mask = self.depth_mask_head(fmap1_one, fmap1_two, fmap1_three, fmap1_four, fmap1,
-                                          fmap2_one, fmap2_two, fmap2_three, fmap2_four, fmap2)
 
         if self.args.alternate_corr:
             corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
@@ -360,6 +355,8 @@ class Backbone_Reconstruction(nn.Module):
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
 
             flow_predictions.append(flow_up)
+
+        depth_mask = self.depth_mask_head(corr, fmap1_two, fmap1_three, fmap1_four)
 
         if test_mode:
             return flow_up, depth_mask

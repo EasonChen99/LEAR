@@ -15,7 +15,7 @@ from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import sequence_loss, DepthReconLoss, ChamferLossOneWay2D
+from core.losses import sequence_loss, DepthReconLoss, ConsistencyLoss, ChamferLossOneWay2D, warp
 from core.flow_viz import flow_to_image
 
 occlusion_kernel = 5
@@ -88,12 +88,10 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         optimizer.zero_grad()
         flow_preds, depth_mask = model(lidar_input, event_input, iters=args.iters)
         loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-        loss_consist = ChamferLossOneWay2D(depth_mask * lidar_input, flow_preds, event_input)
+        loss_consist = ChamferLossOneWay2D(lidar_input, depth_mask, flow_preds, event_input)
         metrics['consist_loss'] = loss_consist.item()
 
-
         loss = 10 * loss_consist + loss_flow
-
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -174,11 +172,14 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
         cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png', original_depth)
-        depth_mask = depth_mask > torch.median(depth_mask)
-        mask_lidar_input = depth_mask * lidar_input
+        warp_lidar_input = warp(lidar_input, -1*flow_up)
+        warp_overlay = overlay_imgs(event_input[0, :, :, :]*0, warp_lidar_input[0, 0, :, :].detach())
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_warp.png', warp_overlay)
+        mask = depth_mask > 0.1
+        mask_lidar_input = mask * lidar_input
         recon_depth = overlay_imgs(event_input[0, :, :, :]*0, mask_lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png', recon_depth)
-        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_3_mask.png', (depth_mask[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_3_reconstruction.png', recon_depth)
+        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_4_mask.png', (mask[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
 
         # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()

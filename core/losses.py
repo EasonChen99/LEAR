@@ -60,8 +60,10 @@ def DepthReconLoss(source_depth_maps, target_depth_map, gamma=0.8):
     return loss
 
 
-def ChamferLossOneWay2D(source_depth_map, flow_preds, target_event_frame, gamma=0.8):
-    
+def ChamferLossOneWay2D(source_depth_map, depth_mask, flow_preds, target_event_frame, gamma=0.8):
+    mask = depth_mask>0.1
+    source_depth_map = source_depth_map * mask
+
     n_predictions = len(flow_preds)
     loss = 0.0
     for i in range(n_predictions):
@@ -122,6 +124,32 @@ def ChamferLossOneWay2D(source_depth_map, flow_preds, target_event_frame, gamma=
     return loss
 
 
+def ConsistencyLoss(source_depth_map, depth_mask, flow_preds, target_event_frame, gamma=0.8):
+    mask = depth_mask!=0
+    source_depth_map = source_depth_map * mask
+
+    n_predictions = len(flow_preds)
+    loss = 0.0
+    for i in range(n_predictions):
+        i_weight = gamma ** (n_predictions - i - 1)
+
+        source_depth_map = warp(source_depth_map, -1 * flow_preds[i])
+
+        source_mask = source_depth_map != 0  # Non-zero points
+        source_mask = source_mask.float()
+
+        target_mask = (target_event_frame[:, 0, :, :] != 0) + (target_event_frame[:, 1, :, :] != 0)  # Non-zero points
+        target_mask = target_mask.unsqueeze(1).float()
+
+        consist_loss = (source_mask - target_mask) ** 2
+        consist_loss = torch.sum(consist_loss, dim=[1, 2, 3])
+
+        consist_loss = consist_loss / (source_mask.sum() + 1e-5)
+
+        loss += i_weight * consist_loss.mean()
+
+
+    return loss
 
 
 def warp(x, flo):
