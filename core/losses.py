@@ -152,6 +152,23 @@ def ConsistencyLoss(source_depth_map, depth_mask, flow_preds, target_event_frame
     return loss
 
 
+def ClassifyLoss(depth_mask, flow_preds, ground_truth, gamma=0.8):
+    criterion = nn.CrossEntropyLoss()
+
+    n_predictions = len(flow_preds)
+    loss = 0.0
+    for i in range(n_predictions):
+        i_weight = gamma ** (n_predictions - i - 1)
+
+        depth_mask = warp(depth_mask, -1 * flow_preds[i])
+
+        loss_i = criterion(depth_mask, ground_truth)
+
+        loss += loss_i * i_weight
+    
+    return loss
+
+
 def warp(x, flo):
     """
     warp an image/tensor (im2) back to im1, according to the optical flow

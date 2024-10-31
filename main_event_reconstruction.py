@@ -15,7 +15,7 @@ from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import sequence_loss, DepthReconLoss, ConsistencyLoss, ChamferLossOneWay2D, warp
+from core.losses import warp, sequence_loss, DepthReconLoss, ConsistencyLoss, ChamferLossOneWay2D, ClassifyLoss
 from core.flow_viz import flow_to_image
 
 occlusion_kernel = 5
@@ -88,10 +88,16 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         optimizer.zero_grad()
         flow_preds, depth_mask = model(lidar_input, event_input, iters=args.iters)
         loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-        loss_consist = ChamferLossOneWay2D(lidar_input, depth_mask, flow_preds, event_input)
+
+        ground_truth = (event_input[:, 0, :, :] > 0) + (event_input[:, 1, :, :] > 0)
+        cv2.imwrite(f"./visualization/input/{i_batch:05d}_gt.png", (ground_truth[0,...].float().cpu().detach().numpy() * 255).astype(np.uint8))
+        ground_truth = ground_truth.float()
+        ground_truth_inv = 1 - ground_truth.clone()
+        ground_truth = torch.cat((ground_truth.unsqueeze(1), ground_truth_inv.unsqueeze(1)), dim=1)
+        loss_consist = ClassifyLoss(depth_mask, flow_preds, ground_truth)
         metrics['consist_loss'] = loss_consist.item()
 
-        loss = 10 * loss_consist + loss_flow
+        loss = 100 * loss_consist + loss_flow
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -155,8 +161,6 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
 
 
-        # original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :])
-        # cv2.imwrite(f'./visualization/overlay/{i_batch:05d}_depth_1_ori.png', original_overlay)
         # RT_inv = to_rotation_matrix(R_err[0], T_err[0])
         # RT_inv = RT_inv.to(device)
         # RT = RT_inv.clone().inverse()
@@ -171,15 +175,14 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
 
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png', original_depth)
+        cv2.imwrite(f'./visualization/output/{i_batch:05d}_1_depth_ori.png', original_depth)
         warp_lidar_input = warp(lidar_input, -1*flow_up)
         warp_overlay = overlay_imgs(event_input[0, :, :, :]*0, warp_lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_2_warp.png', warp_overlay)
-        mask = depth_mask > 0.1
-        mask_lidar_input = mask * lidar_input
-        recon_depth = overlay_imgs(event_input[0, :, :, :]*0, mask_lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_3_reconstruction.png', recon_depth)
-        cv2.imwrite(f'./visualization/depth/{i_batch:05d}_depth_4_mask.png', (mask[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        cv2.imwrite(f'./visualization/output/{i_batch:05d}_2_depth_warp.png', warp_overlay)
+        original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
+        cv2.imwrite(f'./visualization/output/{i_batch:05d}_3_event.png', original_overlay)
+        depth_mask = depth_mask[0, 0, ...] > 0.5
+        cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask.png', (depth_mask.cpu().detach().numpy()* 255).astype(np.uint8))
 
 
         # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()

@@ -212,7 +212,7 @@ class Backbone_Reconstruction(nn.Module):
         self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
         self.cnet = BasicEncoder_LiDAR(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
-        self.depth_mask_head = DepthMaskHead(input_dim=324, output_dim=1)
+        self.depth_mask_head = DepthMaskHead(input_dim=324, output_dim=2)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -311,6 +311,8 @@ class Backbone_Reconstruction(nn.Module):
             fmap1_one, fmap1_two, fmap1_three, fmap1_four, fmap1 = self.fnet_lidar(image1)
             fmap2 = self.fnet_event(image2)
 
+        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}")
+
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
 
@@ -356,6 +358,7 @@ class Backbone_Reconstruction(nn.Module):
 
             flow_predictions.append(flow_up)
 
+        # feature_visualizer(corr[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_corr")
         depth_mask = self.depth_mask_head(corr, fmap1_two, fmap1_three, fmap1_four)
 
         if test_mode:

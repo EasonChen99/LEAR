@@ -151,7 +151,7 @@ class up_conv(nn.Module):
         return x
 
 class DepthMaskHead(nn.Module):
-    def __init__(self, input_dim=324, output_dim=1):
+    def __init__(self, input_dim=324, output_dim=2):
         super(DepthMaskHead, self).__init__()
         
         self.Up_conv4 = conv_block(ch_in=128+input_dim, ch_out=256)
@@ -166,7 +166,7 @@ class DepthMaskHead(nn.Module):
 
         self.Conv_1x1 = nn.Conv2d(32,output_dim,kernel_size=1,stride=1,padding=0)
 
-        self.sigmoid = nn.Sigmoid()
+        self.softmax = nn.Softmax(dim=1)
     
     def forward(self, corr, fmap_two, fmap_three, fmap_four):
         d4 = torch.cat((fmap_four,corr),dim=1)  # 128+324
@@ -184,7 +184,7 @@ class DepthMaskHead(nn.Module):
 
         d1 = self.Up1(d2)                       # 32
 
-        d1 = self.sigmoid(self.Conv_1x1(d1))                 # 1
+        d1 = self.softmax(self.Conv_1x1(d1))                 # 1
 
         return d1
 
