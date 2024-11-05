@@ -86,11 +86,9 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         optimizer.zero_grad()
         flow_preds, depth_mask = model(lidar_input, event_input, iters=args.iters)
         loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-        ground_truth = depth_mask_gt.float()
-        ground_truth_inv = 1 - ground_truth.clone()
-        ground_truth = torch.cat((ground_truth, ground_truth_inv), dim=1)
-        cv2.imwrite(f'./visualization/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        loss_consist = ClassifyLoss(depth_mask, ground_truth)
+        ground_truth = depth_mask_gt[:, 0, :, :].long()
+        cv2.imwrite(f'./visualization/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        loss_consist = ClassifyLoss(depth_mask, ground_truth, loss_func="Focal_Loss")
         metrics['consist_loss'] = loss_consist.item()
 
         loss = 100 * loss_consist + loss_flow
@@ -162,8 +160,8 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         cv2.imwrite(f'./visualization/output/{i_batch:05d}_2_depth_warp.png', warp_overlay)
         original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
         cv2.imwrite(f'./visualization/output/{i_batch:05d}_3_event.png', original_overlay)
-        depth_mask = depth_mask[0, 0, ...] > 0.5
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask.png', (depth_mask.cpu().detach().numpy()* 255).astype(np.uint8))
+        depth_mask = torch.argmax(depth_mask, dim=1)
+        cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask.png', (depth_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
 
         # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()

@@ -166,7 +166,7 @@ class DepthMaskHead(nn.Module):
 
         self.Conv_1x1 = nn.Conv2d(32,output_dim,kernel_size=1,stride=1,padding=0)
 
-        self.softmax = nn.Softmax(dim=1)
+        # self.softmax = nn.Softmax(dim=1)
     
     def forward(self, corr, fmap_two, fmap_three, fmap_four):
         d4 = torch.cat((fmap_four,corr),dim=1)  # 128+324
@@ -184,7 +184,8 @@ class DepthMaskHead(nn.Module):
 
         d1 = self.Up1(d2)                       # 32
 
-        d1 = self.softmax(self.Conv_1x1(d1))                 # 1
+        # d1 = self.softmax(self.Conv_1x1(d1)) 
+        d1 = self.Conv_1x1(d1)
 
         return d1
 

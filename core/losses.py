@@ -152,12 +152,35 @@ def ConsistencyLoss(source_depth_map, depth_mask, flow_preds, target_event_frame
     return loss
 
 
-def ClassifyLoss(depth_mask, ground_truth):
-    criterion = nn.CrossEntropyLoss()
-
-    loss = criterion(depth_mask, ground_truth)
-
+def ClassifyLoss(depth_mask, ground_truth, loss_func="Cross_Entropy_Loss"):
+    if loss_func == "Cross_Entropy_Loss":
+        # cross-entropy loss
+        criterion = nn.CrossEntropyLoss()
+        loss = criterion(depth_mask, ground_truth)
+    elif loss_func == "Weighted_Cross_Entropy_Loss":
+        # weighted cross-entropy loss
+        weights = torch.tensor([1.0, 10.0])
+        criterion = nn.CrossEntropyLoss(weight=weights)
+        loss = criterion(depth_mask, ground_truth)
+    elif loss_func == "Focal_Loss":
+        # focal loss
+        alpha=0.25
+        gamma=2.0
+        criterion = nn.CrossEntropyLoss(reduction='none')
+        ce_loss = criterion(depth_mask, ground_truth)
+        pt = torch.exp(-ce_loss)
+        loss = (alpha * (1 - pt) ** gamma * ce_loss).mean()
+    else:
+        raise "Loss Function doesn't exist"
     return loss
+
+# def ClassifyLoss(depth_mask, depth_mask, alpha=0.25, gamma=2.0):
+#     # focal loss
+#     bce_loss = F.binary_cross_entropy(depth_mask, depth_mask, reduction='none')
+#     pt = torch.exp(-bce_loss)  # Prevents overflow
+#     focal_loss = alpha * ((1 - pt) ** gamma) * bce_loss
+#     return focal_loss.mean()
+
 
 
 def warp(x, flo):
