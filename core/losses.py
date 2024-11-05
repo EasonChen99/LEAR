@@ -152,20 +152,11 @@ def ConsistencyLoss(source_depth_map, depth_mask, flow_preds, target_event_frame
     return loss
 
 
-def ClassifyLoss(depth_mask, flow_preds, ground_truth, gamma=0.8):
+def ClassifyLoss(depth_mask, ground_truth):
     criterion = nn.CrossEntropyLoss()
 
-    n_predictions = len(flow_preds)
-    loss = 0.0
-    for i in range(n_predictions):
-        i_weight = gamma ** (n_predictions - i - 1)
+    loss = criterion(depth_mask, ground_truth)
 
-        depth_mask = warp(depth_mask, -1 * flow_preds[i])
-
-        loss_i = criterion(depth_mask, ground_truth)
-
-        loss += loss_i * i_weight
-    
     return loss
 
 

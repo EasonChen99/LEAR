@@ -67,8 +67,7 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
         # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=600, w=960)
-        event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=296, w=512)
-
+        event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_with_mask(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=296, w=512)
 
         vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
         if vis_event_time_image.shape[2] == 1:
@@ -84,17 +83,14 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         lidar_input[lidar_input==1000.] = 0.
         cv2.imwrite(f"./visualization/input/{i_batch:05d}_projection.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
 
-
         optimizer.zero_grad()
         flow_preds, depth_mask = model(lidar_input, event_input, iters=args.iters)
         loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-
-        ground_truth = (event_input[:, 0, :, :] > 0) + (event_input[:, 1, :, :] > 0)
-        cv2.imwrite(f"./visualization/input/{i_batch:05d}_gt.png", (ground_truth[0,...].float().cpu().detach().numpy() * 255).astype(np.uint8))
-        ground_truth = ground_truth.float()
+        ground_truth = depth_mask_gt.float()
         ground_truth_inv = 1 - ground_truth.clone()
-        ground_truth = torch.cat((ground_truth.unsqueeze(1), ground_truth_inv.unsqueeze(1)), dim=1)
-        loss_consist = ClassifyLoss(depth_mask, flow_preds, ground_truth)
+        ground_truth = torch.cat((ground_truth, ground_truth_inv), dim=1)
+        cv2.imwrite(f'./visualization/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        loss_consist = ClassifyLoss(depth_mask, ground_truth)
         metrics['consist_loss'] = loss_consist.item()
 
         loss = 100 * loss_consist + loss_flow
@@ -125,10 +121,8 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
         # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=600, w=960)
-        event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
-
-        # original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
-        # cv2.imwrite(f'./visualization/input/{i_batch:05d}_event.png', original_overlay)
+        event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_with_mask(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
+        cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask_gt.png', (depth_mask_gt[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
         end = time.time()
         flow_up, depth_mask = model(lidar_input, event_input, iters=24, test_mode=True, idx=i_batch)
@@ -159,19 +153,6 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
             print(f"{i_batch:05d}: {np.mean(err_t_list):.5f} {np.mean(err_r_list):.5f} {np.median(err_t_list):.5f} "
                   f"{np.median(err_r_list):.5f} {len(outliers)} {Time / (i_batch+1):.5f}")
 
-
-
-        # RT_inv = to_rotation_matrix(R_err[0], T_err[0])
-        # RT_inv = RT_inv.to(device)
-        # RT = RT_inv.clone().inverse()
-        # RT_pred = to_rotation_matrix(R_pred, T_pred)
-        # RT_pred = RT_pred.to(device)
-        # RT_new = torch.mm(RT, RT_pred)
-        # T_composed = RT_new[:3, 3]
-        # R_composed = quaternion_from_matrix(RT_new)
-        # _, lidar_input_pred, _, _ = data_generate.push_input(event_frame, pc, [T_composed], [R_composed], device, split='test', h=296, w=512) 
-        # pred_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input_pred[0, 0, :, :])
-        # cv2.imwrite(f'./visualization/overlay/{i_batch:05d}_depth_2_pred.png', pred_overlay)
 
 
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())

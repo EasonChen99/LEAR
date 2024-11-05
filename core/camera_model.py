@@ -100,12 +100,12 @@ class CameraModel:
         return xyz.transpose(), pc_project.transpose(), match_index.transpose()
 
     def depth2pc(self, depth_img):
-        depth_img = depth_img.cpu().numpy()
+        depth_img = depth_img.cpu().detach().numpy()
         index = np.argwhere(depth_img > 0)
         mask = depth_img > 0
         z = depth_img[mask]
         x = (index[:, 1] - self.principal_point[0].cpu().numpy()) * z / self.focal_length[0].cpu().numpy()
         y = (index[:, 0] - self.principal_point[1].cpu().numpy()) * z / self.focal_length[1].cpu().numpy()
 
-        zxy = np.array([z, x, y], dtype=np.float32)
-        return zxy
+        xyz = np.array([x, y, z, np.ones(z.shape)], dtype=np.float32)
+        return xyz

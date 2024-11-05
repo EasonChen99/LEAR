@@ -2,6 +2,7 @@ import torch
 import visibility
 import mathutils
 import numpy as np
+import cv2
 
 from core.utils_point import rotate_back, to_rotation_matrix
 from core.camera_model import CameraModel
@@ -98,6 +99,19 @@ class Data_preprocess:
         depth = depth[:, x:x + h, y:y + w]
         displacement = displacement[:, x:x + h, y:y + w]
         return img, depth, displacement
+    
+    def DownsampleCrop_M3ED_delta_mask(self, img, depth, displacement, mask, split, h=600, w=960):
+        if split == 'train':
+            x = np.random.randint(0, img.shape[1] - h)
+            y = np.random.randint(0, img.shape[2] - w)
+        else:
+            x = (img.shape[1] - h) // 2
+            y = (img.shape[2] - w) // 2
+        img = img[:, x:x + h, y:y + w]
+        depth = depth[:, x:x + h, y:y + w]
+        displacement = displacement[:, x:x + h, y:y + w]
+        mask = mask[:, x:x + h, y:y + w]
+        return img, depth, displacement, mask
     
     def DownsampleCrop_input(self, img, depth, split, h=600, w=960):
         if split == 'train':
@@ -198,6 +212,114 @@ class Data_preprocess:
 
         return rgb_input, lidar_input, flow_gt
     
+    def push_with_mask(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
+        lidar_input = []
+        rgb_input = []
+        flow_gt = []
+        depth_mask_gt = []
+
+        for idx in range(len(rgbs)):
+            rgb = rgbs[idx].to(device)
+            pc = pcs[idx].clone().to(device)
+
+            self.real_shape = [rgb.shape[1], rgb.shape[2], rgb.shape[0]]
+
+            R = mathutils.Quaternion(R_errs[idx].to(device)).to_matrix()
+            R.resize_4x4()
+            T = mathutils.Matrix.Translation(T_errs[idx].to(device))
+            RT = mathutils.Matrix(np.matmul(np.asarray(T), np.asarray(R)))
+
+            pc_rotated = rotate_back(pc, RT)    # Nx4
+
+            cam_params = self.calibs[idx]
+            cam_model = CameraModel()
+            cam_model.focal_length = cam_params[:2]
+            cam_model.principal_point = cam_params[2:]
+            cam_params = cam_params.to(device)
+
+            uv, depth, _, _, VI_indexes = cam_model.project_withindex_pytorch(pc, self.real_shape)
+            uv = uv.t().int().contiguous()
+
+            uv_RT, depth_RT, _, _, VI_indexes_RT = cam_model.project_withindex_pytorch(pc_rotated, self.real_shape)
+            uv_RT = uv_RT.t().int().contiguous()
+
+            delta_P, indexes = self.delta_1(uv_RT, uv, VI_indexes_RT, VI_indexes)
+
+            indexes_uvRT = VI_indexes_RT[indexes]
+            indexes_uvRT = torch.arange(indexes_uvRT.shape[0]).to(device) + 1
+
+            ## keep common points
+            uv_RT_af_index = uv_RT[indexes[VI_indexes_RT], :]
+            depth_RT_af_index = depth_RT[indexes[VI_indexes_RT]]
+
+            indexes_uv = VI_indexes[indexes]
+            indexes_uv = torch.arange(indexes_uv.shape[0]).to(device) + 1
+
+            ## keep common points
+            uv_af_index = uv[indexes[VI_indexes], :]
+            depth_af_index = depth[indexes[VI_indexes]]
+
+            depth_img_no_occlusion_RT, indexes_uvRT_deoccl = self.gen_depth_img(uv_RT_af_index, depth_RT_af_index,
+                                                                                   indexes_uvRT, cam_params)
+            indexes_uvRT_fresh = self.fresh_indexes(indexes_uvRT_deoccl, indexes_uvRT)
+
+            depth_img_no_occlusion, indexes_uv_deoccl = self.gen_depth_img(uv_af_index, depth_af_index, indexes_uv, cam_params)
+            indexes_uv_fresh = self.fresh_indexes(indexes_uv_deoccl, indexes_uv)
+
+            ## make depth_image for training
+            depth_img_no_occlusion_RT_training, indexes_uvRT_deoccl_training = \
+                self.gen_depth_img(uv_RT, depth_RT, VI_indexes_RT[VI_indexes_RT], cam_params)
+            depth_img_no_occlusion_RT_training /= MAX_DEPTH
+            depth_img_no_occlusion_RT_training = depth_img_no_occlusion_RT_training.unsqueeze(0)
+
+
+
+            ## make depth image for generating depth mask
+            depth_img_no_occlusion_GT, indexes_uvRT_deoccl_training = \
+                self.gen_depth_img(uv, depth, VI_indexes[VI_indexes], cam_params)
+            event_mask = (rgb[0, :, :] > 0) + (rgb[1, :, :] > 0)
+            # # dilate
+            # custom_kernel = np.array(
+            # [
+            #     [0, 0, 1, 0, 0],
+            #     [0, 1, 1, 1, 0],
+            #     [1, 1, 1, 1, 1],
+            #     [0, 1, 1, 1, 0],
+            #     [0, 0, 1, 0, 0],
+            # ], dtype=np.uint8)
+            # event_mask = cv2.dilate(event_mask.float().cpu().detach().numpy(), custom_kernel)
+            depth_img_no_occlusion_GT_masked = depth_img_no_occlusion_GT * torch.tensor(event_mask, device=device)
+            pc_masked = cam_model.depth2pc(depth_img_no_occlusion_GT_masked)
+            pc_masked_rotated = rotate_back(torch.tensor(pc_masked, device=device), RT)
+            uv_masked_RT, depth_masked_RT, _, _, VI_masked_indexes_RT = cam_model.project_withindex_pytorch(pc_masked_rotated, self.real_shape)
+            uv_masked_RT = uv_masked_RT.t().int().contiguous()
+            depth_img_no_occlusion_masked_RT, _ = self.gen_depth_img(uv_masked_RT, depth_masked_RT, VI_masked_indexes_RT[VI_masked_indexes_RT], cam_params)
+            depth_img_no_occlusion_masked_RT = depth_img_no_occlusion_masked_RT.unsqueeze(0)
+            depth_mask = depth_img_no_occlusion_masked_RT>0
+
+
+
+            mask1 = indexes_uv_fresh > 0
+            mask2 = indexes_uvRT_fresh > 0
+            mask = mask1 & mask2
+            project_delta_P = self.delta_2(delta_P, uv_RT_af_index, mask)
+
+            ## downsample and crop
+            rgb, depth_img_no_occlusion_RT_training, project_delta_P, depth_mask\
+                = self.DownsampleCrop_M3ED_delta_mask(rgb, depth_img_no_occlusion_RT_training, project_delta_P, depth_mask, split, h=h, w=w)
+
+            rgb_input.append(rgb)
+            lidar_input.append(depth_img_no_occlusion_RT_training)
+            flow_gt.append(project_delta_P)
+            depth_mask_gt.append(depth_mask)
+
+        lidar_input = torch.stack(lidar_input)
+        rgb_input = torch.stack(rgb_input)
+        flow_gt = torch.stack(flow_gt)
+        depth_mask_gt = torch.stack(depth_mask_gt)
+        
+
+        return rgb_input, lidar_input, flow_gt, depth_mask_gt
 
     def push_input(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
         lidar_input = []
@@ -250,7 +372,7 @@ class Data_preprocess:
         rgb_input = torch.stack(rgb_input)
 
         return rgb_input, lidar_input, x_list, y_list
-
+    
     def push_flow(self, rgbs, pcs, T_errs, R_errs, x_list, y_list, device, offsets=None):
         flow_gt = []
 
@@ -322,7 +444,6 @@ class Data_preprocess:
         flow_gt = torch.stack(flow_gt)
 
         return flow_gt
-
 
     def push_depth_gt(self, rgbs, pcs, x_list, y_list, device, MAX_DEPTH=10., offsets=None, downsample=None):
         lidar_depths = []
