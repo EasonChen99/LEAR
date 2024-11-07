@@ -159,7 +159,11 @@ def ClassifyLoss(depth_mask, ground_truth, loss_func="Cross_Entropy_Loss"):
         loss = criterion(depth_mask, ground_truth)
     elif loss_func == "Weighted_Cross_Entropy_Loss":
         # weighted cross-entropy loss
-        weights = torch.tensor([1.0, 10.0])
+        count_neg = (ground_truth == 0).sum()
+        count_pos = (ground_truth == 1).sum()
+        beta = count_neg / (count_neg + count_pos)
+        pos_weight = beta / (1 - beta)
+        weights = torch.tensor([beta, pos_weight], device=depth_mask.device)
         criterion = nn.CrossEntropyLoss(weight=weights)
         loss = criterion(depth_mask, ground_truth)
     elif loss_func == "Focal_Loss":
@@ -173,13 +177,6 @@ def ClassifyLoss(depth_mask, ground_truth, loss_func="Cross_Entropy_Loss"):
     else:
         raise "Loss Function doesn't exist"
     return loss
-
-# def ClassifyLoss(depth_mask, depth_mask, alpha=0.25, gamma=2.0):
-#     # focal loss
-#     bce_loss = F.binary_cross_entropy(depth_mask, depth_mask, reduction='none')
-#     pt = torch.exp(-bce_loss)  # Prevents overflow
-#     focal_loss = alpha * ((1 - pt) ** gamma) * bce_loss
-#     return focal_loss.mean()
 
 
 

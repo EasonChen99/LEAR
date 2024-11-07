@@ -278,7 +278,7 @@ def overlay_imgs(rgb, lidar):
     lidar = lidar[0][0]
 
 
-    lidar = lidar.cpu().numpy()
+    lidar = lidar.cpu().detach().numpy()
     min_d = 0
     max_d = np.max(lidar)
     lidar = ((lidar - min_d) / (max_d - min_d)) * 255

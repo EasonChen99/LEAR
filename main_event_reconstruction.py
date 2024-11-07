@@ -88,7 +88,7 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
         ground_truth = depth_mask_gt[:, 0, :, :].long()
         cv2.imwrite(f'./visualization/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        loss_consist = ClassifyLoss(depth_mask, ground_truth, loss_func="Focal_Loss")
+        loss_consist = ClassifyLoss(depth_mask, ground_truth, loss_func="Weighted_Cross_Entropy_Loss")
         metrics['consist_loss'] = loss_consist.item()
 
         loss = 100 * loss_consist + loss_flow
@@ -153,13 +153,13 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
 
 
-        original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_1_depth_ori.png', original_depth)
-        warp_lidar_input = warp(lidar_input, -1*flow_up)
-        warp_overlay = overlay_imgs(event_input[0, :, :, :]*0, warp_lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_2_depth_warp.png', warp_overlay)
-        original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_3_event.png', original_overlay)
+        # original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
+        # cv2.imwrite(f'./visualization/output/{i_batch:05d}_1_depth_ori.png', original_depth)
+        # warp_lidar_input = warp(lidar_input, -1*flow_up)
+        # warp_overlay = overlay_imgs(event_input[0, :, :, :]*0, warp_lidar_input[0, 0, :, :].detach())
+        # cv2.imwrite(f'./visualization/output/{i_batch:05d}_2_depth_warp.png', warp_overlay)
+        # original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
+        # cv2.imwrite(f'./visualization/test_event_input/{i_batch:05d}_3_event.png', original_overlay)
         depth_mask = torch.argmax(depth_mask, dim=1)
         cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask.png', (depth_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
