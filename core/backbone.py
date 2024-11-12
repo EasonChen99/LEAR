@@ -343,10 +343,6 @@ class Backbone_Reconstruction(nn.Module):
             with autocast(enabled=self.args.mixed_precision):
                 net, up_mask, delta_flow = self.update_block(net, inp, corr, flow)
             
-            # if itr == iters - 1:
-            #     feature_visualizer(up_mask[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_mask")
-            #     feature_visualizer(net[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_net")
-
             # F(t+1) = F(t) + \Delta(t)
             coords1 = coords1 + delta_flow
 
@@ -359,7 +355,7 @@ class Backbone_Reconstruction(nn.Module):
             flow_predictions.append(flow_up)
 
         # feature_visualizer(corr[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_corr")
-        depth_mask = self.depth_mask_head(corr, fmap1_two, fmap1_three, fmap1_four)
+        depth_mask = self.depth_mask_head(corr, fmap1_one, fmap1_two, fmap1_three, fmap1_four, fmap1)
 
         if test_mode:
             return flow_up, depth_mask

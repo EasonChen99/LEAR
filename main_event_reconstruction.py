@@ -91,7 +91,8 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         loss_consist = ClassifyLoss(depth_mask, ground_truth, loss_func="Weighted_Cross_Entropy_Loss")
         metrics['consist_loss'] = loss_consist.item()
 
-        loss = 100 * loss_consist + loss_flow
+        # loss = 100 * loss_consist + loss_flow
+        loss = loss_consist
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -139,6 +140,9 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
         if cal_pose:
             # R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, lidar_input, calib, MAX_DEPTH=args.max_depth, x=60, y=160, h=600, w=960)
+            mask = torch.argmax(depth_mask, dim=1)
+            original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach() * mask[0, ...])
+            cv2.imwrite(f'./visualization/output/{i_batch:05d}_2_depth_mask.png', original_depth)
             R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, lidar_input, calib, MAX_DEPTH=args.max_depth, x=32, y=64, h=296, w=512)
 
             Time += time.time() - end
@@ -163,23 +167,6 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         depth_mask = torch.argmax(depth_mask, dim=1)
         cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask.png', (depth_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
-
-        # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
-        # if vis_event_time_image.shape[2] == 1:
-        #     vis_event_time_image = event_input[0,...].permute(1, 2, 0).repeat(1, 1, 3).cpu().numpy()
-        # else:
-        #     vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
-        # vis_event_time_image = vis_event_time_image[:, :, :3]
-        # cv2.imwrite(f"./visualization/event/{i_batch:05d}_event.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
-        
-        # plt.figure()
-        # plt.imshow(lidar_input[0, 0, ...].cpu().detach().numpy())
-        # plt.savefig(f'./visualization/depth/{i_batch:05d}_depth_1_ori.png')
-        # plt.close()
-        # plt.figure()
-        # plt.imshow(recon_depth_up[0, 0, :, :].detach().cpu().numpy())
-        # plt.savefig(f'./visualization/depth/{i_batch:05d}_depth_2_reconstruction.png')
-        # plt.close()
 
         # flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
         # cv2.imwrite(f"./visualization/flow/{i_batch:05d}_flow.png", flow_viz)

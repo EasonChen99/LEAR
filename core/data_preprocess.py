@@ -281,7 +281,7 @@ class Data_preprocess:
             depth_img_no_occlusion_GT = sparse_to_dense(depth_img_no_occlusion_GT.cpu().detach().numpy())
             depth_img_no_occlusion_GT = torch.tensor(depth_img_no_occlusion_GT, device=device)
             event_mask = (rgb[0, :, :] > 0) + (rgb[1, :, :] > 0)
-            # # dilate
+            # dilate
             # custom_kernel = np.array(
             # [
             #     [0, 0, 1, 0, 0],
@@ -290,9 +290,17 @@ class Data_preprocess:
             #     [0, 1, 1, 1, 0],
             #     [0, 0, 1, 0, 0],
             # ], dtype=np.uint8)
+            # custom_kernel = np.ones((3,3), dtype=np.uint8)
+            # custom_kernel = np.array(
+            # [
+            #     [0, 1, 0],
+            #     [1, 1, 1],
+            #     [0, 1, 0],
+            # ], dtype=np.uint8)
             # event_mask = cv2.dilate(event_mask.float().cpu().detach().numpy(), custom_kernel)
-            # median fliter
+            # event_mask = cv2.GaussianBlur(event_mask.float().cpu().detach().numpy(), (3,3), 0)
             # event_mask = cv2.morphologyEx(event_mask.float().cpu().detach().numpy(), cv2.MORPH_CLOSE, custom_kernel)
+            # event_mask = cv2.morphologyEx(event_mask, cv2.MORPH_OPEN, custom_kernel)
             depth_img_no_occlusion_GT_masked = depth_img_no_occlusion_GT * torch.tensor(event_mask, device=device)
             pc_masked = cam_model.depth2pc(depth_img_no_occlusion_GT_masked)
             pc_masked_rotated = rotate_back(torch.tensor(pc_masked, device=device), RT)
