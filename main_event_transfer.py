@@ -94,7 +94,7 @@ def train(args, TrainImgLoader, model, depth_encoder, optimizer, scheduler, scal
         optimizer.zero_grad()
         flow_preds, fmap1, cnet = model(lidar_input, event_input, iters=args.iters)
         with torch.no_grad():  # Guide encoder is fixed
-            fmap1_guide, cnet_guide = depth_encoder(lidar_input)
+            fmap1_guide, cnet_guide = depth_encoder(lidar_mask_input)
 
         loss, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
 
