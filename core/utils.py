@@ -177,3 +177,53 @@ def feature_visualizer(feature_maps, save_dir):
     plt.imshow(feature_map_mean)
     plt.savefig(f"{save_dir}.png")
 
+import cv2
+def edge_nms(image):
+    """
+    Apply edge-based non-maximum suppression (NMS) to an edge-detected image.
+    image: Grayscale edge-detected image (e.g., gradient magnitude of an edge filter)
+    """
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Step 1: Compute gradients in x and y directions using Sobel filters
+    grad_x = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=3)
+    
+    # Step 2: Compute gradient magnitude and direction (angle)
+    grad_magnitude = np.sqrt(grad_x**2 + grad_y**2)
+    grad_direction = np.arctan2(grad_y, grad_x) * (180.0 / np.pi)  # convert to degrees
+
+    # Step 3: Quantize direction to nearest 0, 45, 90, or 135 degrees
+    quantized_directions = np.zeros(grad_direction.shape, dtype=np.int32)
+    quantized_directions[(grad_direction >= -22.5) & (grad_direction < 22.5) | 
+                        (grad_direction >= 157.5) | (grad_direction < -157.5)] = 0  # Horizontal
+    quantized_directions[(grad_direction >= 22.5) & (grad_direction < 67.5) | 
+                        (grad_direction >= -157.5) & (grad_direction < -112.5)] = 45  # Diagonal 45
+    quantized_directions[(grad_direction >= 67.5) & (grad_direction < 112.5) | 
+                        (grad_direction >= -112.5) & (grad_direction < -67.5)] = 90  # Vertical
+    quantized_directions[(grad_direction >= 112.5) & (grad_direction < 157.5) | 
+                        (grad_direction >= -67.5) & (grad_direction < -22.5)] = 135  # Diagonal 135
+
+    # Step 4: Apply Non-Maximum Suppression
+    suppressed = np.zeros(grad_magnitude.shape, dtype=np.float32)
+    H, W = grad_magnitude.shape
+
+    for i in range(1, H-1):
+        for j in range(1, W-1):
+            direction = quantized_directions[i, j]
+            if direction == 0:  # Horizontal
+                neighbors = (grad_magnitude[i, j-1], grad_magnitude[i, j+1])
+            elif direction == 45:  # Diagonal 45
+                neighbors = (grad_magnitude[i-1, j+1], grad_magnitude[i+1, j-1])
+            elif direction == 90:  # Vertical
+                neighbors = (grad_magnitude[i-1, j], grad_magnitude[i+1, j])
+            elif direction == 135:  # Diagonal 135
+                neighbors = (grad_magnitude[i-1, j-1], grad_magnitude[i+1, j+1])
+
+            # Suppress non-maximum pixels
+            if grad_magnitude[i, j] >= neighbors[0] and grad_magnitude[i, j] >= neighbors[1]:
+                suppressed[i, j] = grad_magnitude[i, j]
+            else:
+                suppressed[i, j] = 0
+
+    return suppressed

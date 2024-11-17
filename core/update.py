@@ -191,11 +191,7 @@ class DepthMaskHead(nn.Module):
         super(DepthMaskHead, self).__init__()
         self.output_dim = output_dim
         
-        self.Up_conv5 = conv_block(ch_in=256+input_dim, ch_out=256)
-        self.netScore4 = nn.Conv2d(in_channels=256, out_channels=output_dim, kernel_size=1, stride=1, padding=0)
-
-        self.Up_conv4 = conv_block(ch_in=128+256, ch_out=256)
-        # self.Up_conv4 = conv_block(ch_in=128+input_dim, ch_out=256)
+        self.Up_conv4 = conv_block(ch_in=128+input_dim, ch_out=256)
         self.Up3 = up_conv(ch_in=256,ch_out=128)
         self.netScore3 = nn.Conv2d(in_channels=128, out_channels=output_dim, kernel_size=1, stride=1, padding=0)
         
@@ -207,47 +203,31 @@ class DepthMaskHead(nn.Module):
         self.Up1 = up_conv(ch_in=64,ch_out=32)
         self.netScore1 = nn.Conv2d(in_channels=32, out_channels=output_dim, kernel_size=1, stride=1, padding=0)
 
-        self.Up_conv1 = conv_block(ch_in=64+64, ch_out=32)
-        self.Up0 = up_conv(ch_in=32,ch_out=32)
-        self.netScore0 = nn.Conv2d(in_channels=32, out_channels=output_dim, kernel_size=1, stride=1, padding=0)
+        self.netCombine = nn.Conv2d(in_channels=6, out_channels=output_dim, kernel_size=1, stride=1, padding=0)
 
-        self.netCombine = nn.Conv2d(in_channels=10, out_channels=output_dim, kernel_size=1, stride=1, padding=0)
-
-    def forward(self, corr, fmap_one, fmap_two, fmap_three, fmap_four, fmap_five):
-        d5 = torch.cat((fmap_five,corr),dim=1)  # 256+324
-        d4 = self.Up_conv5(d5)                  # 512
-        score4 = self.netScore4(d4) 
-
-        d4 = torch.cat((fmap_four,d4),dim=1)    # 128+256
-        # d4 = torch.cat((fmap_four,corr),dim=1)  # 128+324
+    def forward(self, corr, fmap_two, fmap_three, fmap_four):
+        d4 = torch.cat((fmap_four,corr),dim=1)  # 128+324
         d4 = self.Up_conv4(d4)                  # 256
-        d3 = self.Up3(d4)                       # 128
+        d3 = self.Up3(d4)
         score3 = self.netScore3(d3)
 
         d3 = torch.cat((fmap_three,d3),dim=1)   # 128+96
         d3 = self.Up_conv3(d3)                  # 128
-        d2 = self.Up2(d3)                       # 64
+        d2 = self.Up2(d3)
         score2 = self.netScore2(d2)
 
         d2 = torch.cat((fmap_two,d2),dim=1)     # 64+64
         d2 = self.Up_conv2(d2)                  # 64
         d1 = self.Up1(d2)                       # 32
         score1 = self.netScore1(d1)
-        
-        d1 = torch.cat((fmap_one,d2),dim=1)     # 64+64
-        d1 = self.Up_conv1(d1)                  # 32
-        d0 = self.Up0(d1)                       # 32                 
-        score0 = self.netScore0(d0)             
 
         output_size = score1.shape[2:]
-        score4 = torch.nn.functional.interpolate(input=score4, size=output_size, mode='bilinear', align_corners=False)
         score3 = torch.nn.functional.interpolate(input=score3, size=output_size, mode='bilinear', align_corners=False)
         score2 = torch.nn.functional.interpolate(input=score2, size=output_size, mode='bilinear', align_corners=False)
 
-        score = self.netCombine(torch.cat([score4, score3, score2, score1, score0], 1))
+        score = self.netCombine(torch.cat([score3, score2, score1], 1))
 
         return score
-
 
 
 class ConvGRU(nn.Module):

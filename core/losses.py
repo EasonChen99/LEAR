@@ -152,7 +152,7 @@ def ConsistencyLoss(source_depth_map, depth_mask, flow_preds, target_event_frame
     return loss
 
 
-def ClassifyLoss(depth_mask, ground_truth, loss_func="Cross_Entropy_Loss"):
+def ClassifyLoss(depth_mask, ground_truth, flows=None, loss_func="Cross_Entropy_Loss"):
     if loss_func == "Cross_Entropy_Loss":
         # cross-entropy loss
         criterion = nn.CrossEntropyLoss()
@@ -163,7 +163,7 @@ def ClassifyLoss(depth_mask, ground_truth, loss_func="Cross_Entropy_Loss"):
         count_pos = (ground_truth == 1).sum()
         beta = count_neg / (count_neg + count_pos)
         pos_weight = beta / (1 - beta)
-        weights = torch.tensor([beta, pos_weight], device=depth_mask.device)
+        weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
         criterion = nn.CrossEntropyLoss(weight=weights)
         loss = criterion(depth_mask, ground_truth)
     elif loss_func == "Focal_Loss":
@@ -174,9 +174,26 @@ def ClassifyLoss(depth_mask, ground_truth, loss_func="Cross_Entropy_Loss"):
         ce_loss = criterion(depth_mask, ground_truth)
         pt = torch.exp(-ce_loss)
         loss = (alpha * (1 - pt) ** gamma * ce_loss).mean()
+    elif loss_func == "Warped_Weighted_Cross_Entropy_Loss":
+         # warped weighted cross-entropy loss
+        if flows == None:
+            raise "Flows don't exist"
+        count_neg = (ground_truth == 0).sum()
+        count_pos = (ground_truth == 1).sum()
+        beta = count_neg / (count_neg + count_pos)
+        pos_weight = beta / (1 - beta)
+        weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
+        criterion = nn.CrossEntropyLoss(weight=weights)
+        depth_mask_warp = warp(depth_mask, -1 * flows[-1])
+        loss = criterion(depth_mask_warp, ground_truth)  
     else:
         raise "Loss Function doesn't exist"
     return loss
+
+
+def FeatureTransferLoss(feature, feature_guide):
+
+    return F.mse_loss(feature, feature_guide)
 
 
 
