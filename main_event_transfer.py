@@ -15,7 +15,7 @@ from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import sequence_loss, FeatureTransferLoss, warp
+from core.losses import sequence_loss, FeatureTransferLoss, sequence_loss_plus
 from core.flow_viz import flow_to_image
 
 occlusion_kernel = 5
@@ -55,7 +55,7 @@ def _init_fn(worker_id, seed):
     torch.backends.cudnn.deterministic = True
 
 
-def train(args, TrainImgLoader, model, depth_encoder, optimizer, scheduler, scaler, logger, device, epoch):
+def train(args, TrainImgLoader, model, model_ref, optimizer, scheduler, scaler, logger, device, epoch):
     global occlusion_threshold, occlusion_kernel
     model.train()
     for i_batch, sample in enumerate(TrainImgLoader):
@@ -94,16 +94,18 @@ def train(args, TrainImgLoader, model, depth_encoder, optimizer, scheduler, scal
         optimizer.zero_grad()
         flow_preds, fmap1, cnet = model(lidar_input, event_input, iters=args.iters)
         with torch.no_grad():  # Guide encoder is fixed
-            fmap1_guide, cnet_guide = depth_encoder(lidar_mask_input)
+            # fmap1_guide, cnet_guide = depth_encoder(lidar_mask_input)
+            _, flow_up_ref = model_ref(lidar_mask_input, event_input, iters=24, test_mode=True)
 
-        loss, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+        loss, metrics = sequence_loss_plus(flow_preds, flow_gt, flow_up_ref, args.gamma, MAX_FLOW=400)
 
-        loss_feature_fmap = FeatureTransferLoss(fmap1, fmap1_guide)
-        loss_feature_cnet = FeatureTransferLoss(cnet, cnet_guide)
-        metrics["feature_loss"] = loss_feature_fmap.item()
-        metrics["cnet_loss"] = loss_feature_cnet.item()
+        # loss, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+        # loss_feature_fmap = FeatureTransferLoss(fmap1, fmap1_guide)
+        # loss_feature_cnet = FeatureTransferLoss(cnet, cnet_guide)
+        # metrics["feature_loss"] = loss_feature_fmap.item()
+        # metrics["cnet_loss"] = loss_feature_cnet.item()
+        # loss = loss + loss_feature_fmap + loss_feature_cnet
 
-        loss = loss + loss_feature_fmap + loss_feature_cnet
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -312,17 +314,23 @@ if __name__ == '__main__':
         model.load_state_dict(torch.load(args.load_checkpoints))
     model.to(device)
 
-    depth_encoder = torch.nn.DataParallel(Depth_Encoder_Guide(args), device_ids=args.gpus)
+    # depth_encoder = torch.nn.DataParallel(Depth_Encoder_Guide(args), device_ids=args.gpus)
+    # if args.load_pretrained_checkpoints is not None:
+    #     checkpoint = torch.load(args.load_pretrained_checkpoints)
+    #     state_dict = {}
+    #     for key in checkpoint:
+    #         if key in depth_encoder.state_dict().keys():
+    #             print("checkpoint: ", key)
+    #             state_dict[key] = checkpoint[key]
+    #     depth_encoder.load_state_dict(state_dict)
+    #     depth_encoder.to(device)
+    #     depth_encoder.eval()
+    model_ref = torch.nn.DataParallel(Backbone(args), device_ids=args.gpus)
+    print("Parameter Count: %d" % count_parameters(model))
     if args.load_pretrained_checkpoints is not None:
-        checkpoint = torch.load(args.load_pretrained_checkpoints)
-        state_dict = {}
-        for key in checkpoint:
-            if key in depth_encoder.state_dict().keys():
-                print("checkpoint: ", key)
-                state_dict[key] = checkpoint[key]
-        depth_encoder.load_state_dict(state_dict)
-        depth_encoder.to(device)
-        depth_encoder.eval()
+        model_ref.load_state_dict(torch.load(args.load_pretrained_checkpoints))
+        model_ref.to(device)
+        model_ref.eval()
     else:
         if not args.evaluate:
             raise "pretrained model unfound"
@@ -389,7 +397,7 @@ if __name__ == '__main__':
 
     min_val_err = 9999.
     for epoch in range(starting_epoch, args.epochs):
-        train(args, TrainImgLoader, model, depth_encoder, optimizer, scheduler, scaler, logger, device, epoch)
+        train(args, TrainImgLoader, model, model_ref, optimizer, scheduler, scaler, logger, device, epoch)
 
         if epoch % args.evaluate_interval == 0:
             epe, f1 = test(args, TestImgLoader, model, device)
