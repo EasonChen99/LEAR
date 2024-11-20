@@ -294,6 +294,9 @@ class Data_preprocess:
             mask = mask1 & mask2
             project_delta_P = self.delta_2(delta_P, uv_RT_af_index, mask)
 
+            # depth_mask = depth_img_no_occlusion_RT_training>0
+            # project_delta_P *= depth_mask
+
             ## downsample and crop
             rgb, depth_img_no_occlusion_RT_training, project_delta_P \
                 = self.DownsampleCrop_M3ED_delta(rgb, depth_img_no_occlusion_RT_training, project_delta_P, split, h=h, w=w)
@@ -307,7 +310,6 @@ class Data_preprocess:
         flow_gt = torch.stack(flow_gt)
 
         return rgb_input, lidar_input, flow_gt
-
 
     def push_use_mask_plus(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
         lidar_input = []
@@ -483,9 +485,10 @@ class Data_preprocess:
             uv_masked_RT, depth_masked_RT, _, _, VI_masked_indexes_RT = cam_model.project_withindex_pytorch(pc_masked_rotated, self.real_shape)
             uv_masked_RT = uv_masked_RT.t().int().contiguous()
             depth_img_no_occlusion_masked_RT, _ = self.gen_depth_img(uv_masked_RT, depth_masked_RT, VI_masked_indexes_RT[VI_masked_indexes_RT], cam_params)
+            depth_img_no_occlusion_masked_RT /= MAX_DEPTH
             depth_img_no_occlusion_masked_RT = depth_img_no_occlusion_masked_RT.unsqueeze(0)
-            depth_mask_RT = depth_img_no_occlusion_masked_RT>0
-            depth_mask = torch.cat((depth_mask_RT, event_mask.unsqueeze(0)), dim=0)
+            depth_mask = depth_img_no_occlusion_masked_RT>0
+            depth_mask = torch.cat((depth_mask, event_mask.unsqueeze(0)), dim=0)
 
 
             mask1 = indexes_uv_fresh > 0
