@@ -11,11 +11,12 @@ import matplotlib.pyplot as plt
 
 from core.datasets_m3ed import DatasetM3ED as Dataset
 from core.backbone import Backbone_Edge as Backbone
-from core.utils import count_parameters, merge_inputs, fetch_optimizer, Logger
+from core.extractor import BasicEncoder_LiDAR
+from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import warp, sequence_loss, ClassifyLoss
+from core.losses import warp, sequence_loss, ClassifyLoss, FeatureTransferLoss
 from core.flow_viz import flow_to_image
 
 occlusion_kernel = 5
@@ -55,7 +56,7 @@ def _init_fn(worker_id, seed):
     torch.backends.cudnn.deterministic = True
 
 
-def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch):
+def train(args, TrainImgLoader, model, depth_encoder, optimizer, scheduler, scaler, logger, device, epoch):
     global occlusion_threshold, occlusion_kernel
     model.train()
     for i_batch, sample in enumerate(TrainImgLoader):
@@ -81,30 +82,27 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         else:
             vis_lidar_input = overlay_imgs(event_input[0, :3, :, :]*0, lidar_input[0, 0, :, :])
         lidar_input[lidar_input==1000.] = 0.
-        cv2.imwrite(f"./visualization/input/{i_batch:05d}_depth.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
+        cv2.imwrite(f"./visualization/input/{i_batch:05d}_projection.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
 
         optimizer.zero_grad()
-        ## flow loss
-        flow_preds, depth_mask = model(lidar_input, event_input, iters=args.iters)
-        loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-        ## direct edge prediction loss
-        ground_truth_depth_mask = depth_mask_gt[:, 0, :, :].long()
-        cv2.imwrite(f'./visualization/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth_depth_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        depth_mask_bi = torch.cat((1.-depth_mask, depth_mask), dim=1)
-        loss_edge = ClassifyLoss(depth_mask_bi, ground_truth_depth_mask, lidar_input=lidar_input, loss_func="Masked_Weighted_Cross_Entropy_Loss")
-        metrics['edge_loss'] = loss_edge.item()
-        # warped edge prediction consistence loss
-        ground_truth_event_mask = depth_mask_gt[:, 1, :, :].long()
-        cv2.imwrite(f'./visualization/input/{i_batch:05d}_event_mask_gt.png', (ground_truth_event_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        loss_consist = ClassifyLoss(depth_mask_bi, ground_truth_event_mask.unsqueeze(1).float(), flow=flow_preds[-1], lidar_input=lidar_input, loss_func="Masked_Inverse_Warped_Weighted_Cross_Entropy_Loss")
-        metrics['consist_loss'] = loss_consist.item()
+        flow_preds, depth_mask, fmap1, cnet = model(lidar_input, event_input, iters=args.iters)
+        with torch.no_grad():
+            lidar_mask_input = depth_mask_gt[:, 1, :, :].unsqueeze(1)
+            fmap1_guide, cnet_guide = depth_encoder(lidar_mask_input)
 
-        alpha = 100
-        beta = 100
-        if args.edge_loss:
-            loss = loss_flow + alpha * loss_edge + beta * loss_consist
-        else:
-            loss = loss_flow + beta * loss_consist
+        loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+        ground_truth = depth_mask_gt[:, 0, :, :].long()
+        cv2.imwrite(f'./visualization/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        depth_mask = torch.cat((1.-depth_mask, depth_mask), dim=1)
+        loss_edge = ClassifyLoss(depth_mask, ground_truth, loss_func="Weighted_Cross_Entropy_Loss")
+        metrics['edge_loss'] = loss_edge.item()
+
+        loss_feature_fmap = FeatureTransferLoss(fmap1, fmap1_guide)
+        loss_feature_cnet = FeatureTransferLoss(cnet, cnet_guide)
+        metrics["feature_loss"] = loss_feature_fmap.item()
+        metrics["cnet_loss"] = loss_feature_cnet.item()
+        
+        loss = 100 * loss_edge + loss_flow + loss_feature_fmap + loss_feature_cnet
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -197,6 +195,22 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
     else:
         return err_t_list, err_r_list, outliers, Time, epe, f1   
 
+class Depth_Encoder_Guide(torch.nn.Module):
+    def __init__(self, args):
+        super(Depth_Encoder_Guide, self).__init__()
+        self.fnet_lidar = BasicEncoder_LiDAR(output_dim=256, norm_fn='instance', dropout=args.dropout)
+        self.cnet = BasicEncoder_LiDAR(output_dim=256, norm_fn='batch', dropout=args.dropout)
+    
+    def forward(self, depth):
+        depth = 2 * depth - 1.0
+        depth = depth.contiguous()
+
+        fmap1 = self.fnet_lidar(depth)
+        cnet = self.cnet(depth)
+
+        return fmap1, cnet
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path',
@@ -213,6 +227,8 @@ if __name__ == '__main__':
                         default='falcon_indoor_flight_3')
     parser.add_argument('--load_checkpoints',
                         help="restore checkpoint")
+    parser.add_argument('--load_pretrained_checkpoints',
+                        help="load checkpoint")
     parser.add_argument('--epochs', 
                         default=100, 
                         type=int, 
@@ -278,8 +294,6 @@ if __name__ == '__main__':
                         dest='evaluate', 
                         action='store_true',
                         help='evaluate model on validation set')
-    parser.add_argument('--edge_loss', 
-                        action='store_true')
     args = parser.parse_args()    
 
 
@@ -293,19 +307,19 @@ if __name__ == '__main__':
     print("Parameter Count: %d" % count_parameters(model))
     if args.load_checkpoints is not None:
         model.load_state_dict(torch.load(args.load_checkpoints))
-    # if args.load_checkpoints1 is not None and args.load_checkpoints2 is not None:
-    #     checkpoint1 = torch.load(args.load_checkpoints1)
-    #     checkpoint2 = torch.load(args.load_checkpoints2)
-    #     combined_state_dict = {}
-    #     for key in checkpoint2:
-    #         if key in checkpoint1:
-    #             print("checkpoint1: ", key)
-    #             combined_state_dict[key] = checkpoint1[key]
-    #         else:
-    #             print("checkpoint2: ", key)
-    #             combined_state_dict[key] = checkpoint2[key]
-    #     model.load_state_dict(combined_state_dict)
     model.to(device)
+
+    depth_encoder = torch.nn.DataParallel(Depth_Encoder_Guide(args), device_ids=args.gpus)
+    if args.load_pretrained_checkpoints is not None:
+        checkpoint = torch.load(args.load_pretrained_checkpoints)
+        state_dict = {}
+        for key in checkpoint:
+            if key in depth_encoder.state_dict().keys():
+                print("checkpoint: ", key)
+                state_dict[key] = checkpoint[key]
+        depth_encoder.load_state_dict(state_dict)
+        depth_encoder.to(device)
+        depth_encoder.eval()
     
     def init_fn(x):
         return _init_fn(x, seed)
@@ -369,7 +383,7 @@ if __name__ == '__main__':
 
     min_val_err = 9999.
     for epoch in range(starting_epoch, args.epochs):
-        train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch)
+        train(args, TrainImgLoader, model, depth_encoder, optimizer, scheduler, scaler, logger, device, epoch)
 
         if epoch % args.evaluate_interval == 0:
             epe, f1 = test(args, TestImgLoader, model, device)

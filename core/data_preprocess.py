@@ -267,9 +267,9 @@ class Data_preprocess:
             depth_img_no_occlusion, indexes_uv_deoccl = self.gen_depth_img(uv_af_index, depth_af_index, indexes_uv, cam_params)
             indexes_uv_fresh = self.fresh_indexes(indexes_uv_deoccl, indexes_uv)
 
-            # ## make depth_image for training
-            # depth_img_no_occlusion_RT_training, indexes_uvRT_deoccl_training = \
-            #     self.gen_depth_img(uv_RT, depth_RT, VI_indexes_RT[VI_indexes_RT], cam_params)
+            ## make depth_image for training
+            depth_img_no_occlusion_RT_training, indexes_uvRT_deoccl_training = \
+                self.gen_depth_img(uv_RT, depth_RT, VI_indexes_RT[VI_indexes_RT], cam_params)
             
             
             # make depth image for generating depth mask
@@ -283,8 +283,10 @@ class Data_preprocess:
             pc_masked_rotated = rotate_back(torch.tensor(pc_masked, device=device), RT)
             uv_masked_RT, depth_masked_RT, _, _, VI_masked_indexes_RT = cam_model.project_withindex_pytorch(pc_masked_rotated, self.real_shape)
             uv_masked_RT = uv_masked_RT.t().int().contiguous()
-            depth_img_no_occlusion_RT_training, _ = self.gen_depth_img(uv_masked_RT, depth_masked_RT, VI_masked_indexes_RT[VI_masked_indexes_RT], cam_params)
+            depth_img_mask_no_occlusion_RT_training, _ = self.gen_depth_img(uv_masked_RT, depth_masked_RT, VI_masked_indexes_RT[VI_masked_indexes_RT], cam_params)
+            mask = depth_img_mask_no_occlusion_RT_training > 0
 
+            depth_img_no_occlusion_RT_training = depth_img_no_occlusion_RT_training * mask
 
             depth_img_no_occlusion_RT_training /= MAX_DEPTH
             depth_img_no_occlusion_RT_training = depth_img_no_occlusion_RT_training.unsqueeze(0)
@@ -293,9 +295,6 @@ class Data_preprocess:
             mask2 = indexes_uvRT_fresh > 0
             mask = mask1 & mask2
             project_delta_P = self.delta_2(delta_P, uv_RT_af_index, mask)
-
-            # depth_mask = depth_img_no_occlusion_RT_training>0
-            # project_delta_P *= depth_mask
 
             ## downsample and crop
             rgb, depth_img_no_occlusion_RT_training, project_delta_P \
@@ -468,6 +467,8 @@ class Data_preprocess:
             ## make depth_image for training
             depth_img_no_occlusion_RT_training, indexes_uvRT_deoccl_training = \
                 self.gen_depth_img(uv_RT, depth_RT, VI_indexes_RT[VI_indexes_RT], cam_params)
+            # depth_img_no_occlusion_RT_training = sparse_to_dense(depth_img_no_occlusion_RT_training.cpu().detach().numpy())
+            # depth_img_no_occlusion_RT_training = torch.tensor(depth_img_no_occlusion_RT_training, device=device)
             depth_img_no_occlusion_RT_training /= MAX_DEPTH
             depth_img_no_occlusion_RT_training = depth_img_no_occlusion_RT_training.unsqueeze(0)
 
@@ -488,6 +489,8 @@ class Data_preprocess:
             depth_img_no_occlusion_masked_RT /= MAX_DEPTH
             depth_img_no_occlusion_masked_RT = depth_img_no_occlusion_masked_RT.unsqueeze(0)
             depth_mask = depth_img_no_occlusion_masked_RT>0
+            depth_mask = depth_mask * depth_img_no_occlusion_RT_training
+            depth_mask = depth_mask > 0
             depth_mask = torch.cat((depth_mask, event_mask.unsqueeze(0)), dim=0)
 
 

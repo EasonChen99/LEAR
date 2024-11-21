@@ -75,13 +75,13 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         else:
             vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
         vis_event_time_image = vis_event_time_image[:, :, :3]
-        cv2.imwrite(f"./visualization/input/{i_batch:05d}_event.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
+        cv2.imwrite(f"./visualization/EVLoc_baseline/input/{i_batch:05d}_event.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
         if event_input.shape[1] == 1:
             vis_lidar_input = overlay_imgs(event_input[0, :, :, :].repeat(3, 1, 1)*0, lidar_input[0, 0, :, :])
         else:
             vis_lidar_input = overlay_imgs(event_input[0, :3, :, :]*0, lidar_input[0, 0, :, :])
         lidar_input[lidar_input==1000.] = 0.
-        cv2.imwrite(f"./visualization/input/{i_batch:05d}_projection.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
+        cv2.imwrite(f"./visualization/EVLoc_baseline/input/{i_batch:05d}_depth.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
 
 
 
@@ -148,27 +148,40 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
                   f"{np.median(err_r_list):.5f} {len(outliers)} {Time / (i_batch+1):.5f}")
         
 
-        original_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :])
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_1_depth_ori.png', original_overlay)
-        original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_1_event_ori.png', original_overlay)
-        # _, lidar_input_gt, _ = data_generate.push_use_mask(event_frame, pc, [torch.tensor([0.,0.,0.])], [torch.tensor([1., 0., 0., 0.])], device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512) 
-        # gt_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input_gt[0, 0, :, :])
-        # cv2.imwrite(f'./visualization/output/{i_batch:05d}_2_depth_gt.png', gt_overlay)
-        RT_inv = to_rotation_matrix(R_err[0], T_err[0])
-        RT_inv = RT_inv.to(device)
-        RT = RT_inv.clone().inverse()
-        RT_pred = to_rotation_matrix(R_pred, T_pred)
-        RT_pred = RT_pred.to(device)
-        RT_new = torch.mm(RT, RT_pred)
-        T_composed = RT_new[:3, 3]
-        R_composed = quaternion_from_matrix(RT_new)
-        _, lidar_input_pred, _ = data_generate.push_use_mask(event_frame, pc, [T_composed], [R_composed], device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512) 
-        pred_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input_pred[0, 0, :, :])
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_3_depth_pred.png', pred_overlay)
+        # original_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :])
+        # cv2.imwrite(f'./visualization/EVLoc_baseline/output/{i_batch:05d}_1_depth_ori.png', original_overlay)
+        # original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
+        # cv2.imwrite(f'./visualization/EVLoc_baseline/output/{i_batch:05d}_2_event_ori.png', original_overlay)
 
-        flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
-        cv2.imwrite(f"./visualization/flow/{i_batch:05d}_flow.png", flow_viz)
+        # warp_depth = warp(lidar_input, -1 * flow_up)
+        # original_overlay = overlay_imgs(event_input[0, :, :, :]*0, warp_depth[0, 0, :, :])
+        # cv2.imwrite(f'./visualization/EVLoc_baseline/output/{i_batch:05d}_1_depth_warp.png', original_overlay)
+
+        # warp_event = warp(event_input, flow_up)
+        # original_overlay = overlay_imgs(warp_event[0, :, :, :], warp_depth[0, 0, :, :]*0)
+        # cv2.imwrite(f'./visualization/EVLoc_baseline/output/{i_batch:05d}_2_event_warp.png', original_overlay)        
+
+
+        # # _, lidar_input_gt, _ = data_generate.push_use_mask(event_frame, pc, [torch.tensor([0.,0.,0.])], [torch.tensor([1., 0., 0., 0.])], device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512) 
+        # # gt_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input_gt[0, 0, :, :])
+        # # cv2.imwrite(f'./visualization/output/{i_batch:05d}_2_depth_gt.png', gt_overlay)
+        # RT_inv = to_rotation_matrix(R_err[0], T_err[0])
+        # RT_inv = RT_inv.to(device)
+        # RT = RT_inv.clone().inverse()
+        # RT_pred = to_rotation_matrix(R_pred, T_pred)
+        # RT_pred = RT_pred.to(device)
+        # RT_new = torch.mm(RT, RT_pred)
+        # T_composed = RT_new[:3, 3]
+        # R_composed = quaternion_from_matrix(RT_new)
+        # _, lidar_input_pred, _ = data_generate.push_use_mask(event_frame, pc, [T_composed], [R_composed], device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512) 
+        # pred_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input_pred[0, 0, :, :])
+        # cv2.imwrite(f'./visualization/output/{i_batch:05d}_3_depth_pred.png', pred_overlay)
+
+        # flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
+        # cv2.imwrite(f"./visualization/flow/{i_batch:05d}_flow.png", flow_viz)
+ 
+        # flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
+        # cv2.imwrite(f"./visualization/flow/{i_batch:05d}_flow_gt_mask.png", flow_viz)       
 
         
     epe_list = np.array(epe_list)
