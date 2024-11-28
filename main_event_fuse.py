@@ -15,7 +15,7 @@ from core.utils import count_parameters, merge_inputs, fetch_optimizer, Logger
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import warp, sequence_loss, ClassifyLoss, SigLoss
+from core.losses import warp, sequence_loss, ClassifyLoss, SigLoss, FuseConsistLoss
 from core.flow_viz import flow_to_image
 
 occlusion_kernel = 5
@@ -70,8 +70,8 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=600, w=960)
         event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
 
-        event2depth_gt = lidar_input[:, 1, :, :].unsqueeze(1)
-        lidar_input = lidar_input[:, 0, :, :].unsqueeze(1)
+        event2depth_gt = lidar_input[:, 2, :, :].unsqueeze(1)
+        lidar_input = lidar_input[:, :2, :, :]
 
         vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
         vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
@@ -80,6 +80,9 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         vis_lidar_input = overlay_imgs(event_input[0, :3, :, :]*0, lidar_input[0, 0, :, :])
         lidar_input[lidar_input==1000.] = 0.
         cv2.imwrite(f"./visualization/EVLoc_Fuse/input/{i_batch:05d}_depth.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
+        vis_lidar_input = overlay_imgs(event_input[0, :3, :, :]*0, lidar_input[0, 1, :, :])
+        lidar_input[lidar_input==1000.] = 0.
+        cv2.imwrite(f"./visualization/EVLoc_Fuse/input/{i_batch:05d}_depth_dense.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
         vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
         event2depth_gt[event2depth_gt==1000.] = 0.
         cv2.imwrite(f"./visualization/EVLoc_Fuse/input/{i_batch:05d}_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
@@ -99,11 +102,19 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         loss_depth_fn = SigLoss()
         loss_depth = loss_depth_fn(event2depth, event2depth_gt)
         metrics['depth_loss'] = loss_depth.item()
-        # warped edge prediction consistence loss
+        # consistence loss
         ground_truth_event_mask = depth_mask_gt[:, 1, :, :].long()
         cv2.imwrite(f'./visualization/EVLoc_Fuse/input/{i_batch:05d}_event_mask_gt.png', (ground_truth_event_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        loss_consist = ClassifyLoss(depth_mask_bi, ground_truth_event_mask.unsqueeze(1).float(), flow=flow_preds[-1], lidar_input=lidar_input, loss_func="Inverse_Warped_Weighted_Cross_Entropy_Loss")
+        # loss_consist = ClassifyLoss(depth_mask_bi, ground_truth_event_mask.unsqueeze(1).float(), flow=flow_preds[-1], lidar_input=lidar_input, loss_func="Inverse_Warped_Weighted_Cross_Entropy_Loss")
+        loss_consist = FuseConsistLoss(ground_truth_event_mask.unsqueeze(1).float(), depth_mask_bi, 
+                                       lidar_input[:, 0, :, :].unsqueeze(1), event2depth, 
+                                       flow_pre)
         metrics['consist_loss'] = loss_consist.item()
+
+
+        mask_edge = ground_truth_depth_mask > 0
+        mask_flow = (flow_gt[:, 0, :, :] != 0) + (flow_gt[:, 1, :, :] != 0)
+        mask_common = mask_edge * mask_flow
 
         alpha = 100
         beta = 100
@@ -115,7 +126,7 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
             loss += alpha * loss_edge
         if args.use_depth_loss:
             loss += theta * loss_depth
-        if args.use_edge_consist_loss:
+        if args.use_consist_loss:
             loss += beta * loss_consist
 
         scaler.scale(loss).backward()
@@ -147,8 +158,11 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
         cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_3_depth2edge_gt.png', (depth_mask_gt[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
-        event2depth_gt = lidar_input[:, 1, :, :].unsqueeze(1)
-        lidar_input = lidar_input[:, 0, :, :].unsqueeze(1)
+        event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
+        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_3_event2edge_gt.png', (depth_mask_gt[0, 1, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+
+        event2depth_gt = lidar_input[:, 2, :, :].unsqueeze(1)
+        lidar_input = lidar_input[:, :2, :, :]
 
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth_gt[0, 0, :, :].detach())
         cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_4_event2depth_gt.png', original_depth)
@@ -175,7 +189,7 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
         if cal_pose:
             # R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, lidar_input, calib, MAX_DEPTH=args.max_depth, x=60, y=160, h=600, w=960)
-            R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, lidar_input, calib, MAX_DEPTH=args.max_depth, x=32, y=64, h=296, w=512)
+            R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, lidar_input[:, 0, :, :].unsqueeze(0), calib, MAX_DEPTH=args.max_depth, x=32, y=64, h=296, w=512)
 
             Time += time.time() - end
             if flag:
@@ -193,13 +207,14 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
         cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_2_depth_ori.png', original_depth)
-
+        original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 1, :, :].detach())
+        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_2_depth_ori_dense.png', original_depth)
         cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_3_depth2edge_pred.png', (depth_mask[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
         cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_4_event2depth_pred.png', original_depth)
 
-        # flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
-        # cv2.imwrite(f"./visualization/EVLoc_Fuse/flow/{i_batch:05d}_flow.png", flow_viz)
+        flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
+        cv2.imwrite(f"./visualization/EVLoc_Fuse/output/{i_batch:05d}_5_flow.png", flow_viz)
         
     epe_list = np.array(epe_list)
     out_list = np.concatenate(out_list)
@@ -296,7 +311,7 @@ if __name__ == '__main__':
                         action='store_true')
     parser.add_argument('--use_edge_loss', 
                         action='store_true')
-    parser.add_argument('--use_edge_consist_loss',
+    parser.add_argument('--use_consist_loss',
                         action='store_true')
     parser.add_argument('--use_depth_loss',
                         action='store_true')

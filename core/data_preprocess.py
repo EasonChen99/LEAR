@@ -622,7 +622,6 @@ class Data_preprocess:
             T = mathutils.Matrix.Translation(T_errs[idx].to(device))
             RT = mathutils.Matrix(np.matmul(np.asarray(T), np.asarray(R)))
 
-            pc_rotated = rotate_back(pc, RT)    # Nx4
 
             cam_params = self.calibs[idx]
             cam_model = CameraModel()
@@ -633,6 +632,7 @@ class Data_preprocess:
             uv, depth, _, _, VI_indexes = cam_model.project_withindex_pytorch(pc, self.real_shape)
             uv = uv.t().int().contiguous()
 
+            pc_rotated = rotate_back(pc, RT)
             uv_RT, depth_RT, _, _, VI_indexes_RT = cam_model.project_withindex_pytorch(pc_rotated, self.real_shape)
             uv_RT = uv_RT.t().int().contiguous()
 
@@ -662,8 +662,13 @@ class Data_preprocess:
             ## make depth_image for training
             depth_img_no_occlusion_RT_training, indexes_uvRT_deoccl_training = \
                 self.gen_depth_img(uv_RT, depth_RT, VI_indexes_RT[VI_indexes_RT], cam_params)
+            depth_img_no_occlusion_RT_training_dense = sparse_to_dense(depth_img_no_occlusion_RT_training.cpu().detach().numpy())
+            depth_img_no_occlusion_RT_training_dense = torch.tensor(depth_img_no_occlusion_RT_training_dense, device=device)
             depth_img_no_occlusion_RT_training /= MAX_DEPTH
             depth_img_no_occlusion_RT_training = depth_img_no_occlusion_RT_training.unsqueeze(0)
+            depth_img_no_occlusion_RT_training_dense /= MAX_DEPTH
+            depth_img_no_occlusion_RT_training_dense = depth_img_no_occlusion_RT_training_dense.unsqueeze(0)
+            depth_img_no_occlusion_RT_training = torch.cat((depth_img_no_occlusion_RT_training, depth_img_no_occlusion_RT_training_dense), dim=0)
 
 
             # make depth image for generating depth mask

@@ -188,7 +188,7 @@ def ConsistencyLoss(source_depth_map, depth_mask, flow_preds, target_event_frame
     return loss
 
 
-def ClassifyLoss(depth_mask, ground_truth, flow=None, lidar_input=None, loss_func="Cross_Entropy_Loss"):
+def ClassifyLoss(depth_mask, ground_truth, flow=None, mask=None, loss_func="Cross_Entropy_Loss"):
     if loss_func == "Cross_Entropy_Loss":
         # cross-entropy loss
         criterion = nn.CrossEntropyLoss()
@@ -210,18 +210,18 @@ def ClassifyLoss(depth_mask, ground_truth, flow=None, lidar_input=None, loss_fun
         weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
         criterion = nn.CrossEntropyLoss(weight=weights)
         loss = criterion(depth_mask, ground_truth)
-    elif loss_func == "Masked_Weighted_Cross_Entropy_Loss":
-        # masked weighted cross-entropy loss
-        if lidar_input == None:
-            raise "depth input doesn't exist"
-        mask = lidar_input > 0
-        count_neg = (ground_truth[mask[:, 0, ...]] == 0).sum()
-        count_pos = (ground_truth[mask[:, 0, ...]] == 1).sum()
-        beta = count_neg / (count_neg + count_pos)
-        pos_weight = beta / (1 - beta)
-        weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
-        criterion = nn.CrossEntropyLoss(weight=weights)
-        loss = criterion(depth_mask[mask.repeat(1, 2, 1, 1)].view(1, 2, -1), ground_truth[mask[:, 0, ...]].view(1, -1))
+    # elif loss_func == "Masked_Weighted_Cross_Entropy_Loss":
+    #     # masked weighted cross-entropy loss
+    #     if lidar_input == None:
+    #         raise "depth input doesn't exist"
+    #     mask = lidar_input > 0
+    #     count_neg = (ground_truth[mask[:, 0, ...]] == 0).sum()
+    #     count_pos = (ground_truth[mask[:, 0, ...]] == 1).sum()
+    #     beta = count_neg / (count_neg + count_pos)
+    #     pos_weight = beta / (1 - beta)
+    #     weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
+    #     criterion = nn.CrossEntropyLoss(weight=weights)
+    #     loss = criterion(depth_mask[mask.repeat(1, 2, 1, 1)].view(1, 2, -1), ground_truth[mask[:, 0, ...]].view(1, -1))
     elif loss_func == "Warped_Weighted_Cross_Entropy_Loss":
          # warped weighted cross-entropy loss
         if flow == None:
@@ -252,9 +252,8 @@ def ClassifyLoss(depth_mask, ground_truth, flow=None, lidar_input=None, loss_fun
          # masked inversed warped weighted cross-entropy loss
         if flow == None:
             raise "Flow doesn't exist"
-        if lidar_input == None:
-            raise "depth input doesn't exist"
-        mask = lidar_input > 0
+        if mask == None:
+            raise "Mask doesn't exist"
         ground_truth_warp = warp(ground_truth, flow)
         ground_truth_warp = ground_truth_warp > 0
         ground_truth = ground_truth_warp[:, 0, ...].long()
@@ -272,8 +271,6 @@ def ClassifyLoss(depth_mask, ground_truth, flow=None, lidar_input=None, loss_fun
 
 class SigLoss(nn.Module):
     """SigLoss.
-
-        We adopt the implementation in `Adabins <https://github.com/shariqfarooq123/AdaBins/blob/main/loss.py>`_.
 
     Args:
         valid_mask (bool): Whether filter invalid gt (gt > 0). Default: True.
@@ -325,6 +322,24 @@ class SigLoss(nn.Module):
         
         loss_depth = self.loss_weight * self.sigloss(depth_pred, depth_gt)
         return loss_depth
+    
+
+
+
+def FuseConsistLoss(edge_gt, edge_pre, depth_gt, depth_pre, flow_pre, flow_gt):
+    loss = 0.
+    flow_mask = (flow_gt[:, 0, :, :] != 0) + (flow_gt[:, 1, :, :] != 0)
+    loss_edge = ClassifyLoss(edge_pre, edge_gt, flow=flow_pre, mask=flow_mask, loss_func="Masked_Inverse_Warped_Weighted_Cross_Entropy_Loss")
+    loss_depth_fn = SigLoss()
+    warp_depth_gt = warp(depth_gt, flow_pre)
+    warp_depth_gt *= flow_mask
+    warp_depth_pre *= flow_mask
+    loss_depth = loss_depth_fn(depth_pre, warp_depth_gt)
+
+    return loss_edge + loss_depth
+
+
+
 
 
 def FeatureTransferLoss(feature, feature_guide):

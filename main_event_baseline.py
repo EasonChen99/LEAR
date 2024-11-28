@@ -66,7 +66,8 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
         # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=600, w=960)
-        event_input, lidar_input, flow_gt = data_generate.push_use_mask(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=296, w=512)
+        event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
+        # event_input, lidar_input, flow_gt = data_generate.push_use_mask(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=296, w=512)
         # event_input, lidar_input, flow_gt = data_generate.push_dense_flow(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
 
         vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
@@ -116,7 +117,8 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
         # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=600, w=960)
-        event_input, lidar_input, flow_gt = data_generate.push_use_mask(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
+        event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
+        # event_input, lidar_input, flow_gt = data_generate.push_use_mask(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
         # event_input, lidar_input, flow_gt = data_generate.push_dense_flow(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
 
         end = time.time()
@@ -155,10 +157,10 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
         original_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :])
         cv2.imwrite(f'./visualization/EVLoc_baseline/output/{i_batch:05d}_1_depth_ori.png', original_overlay)
-        flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
-        cv2.imwrite(f"./visualization/EVLoc_baseline/output/{i_batch:05d}_flow_gt_mask.png", flow_viz)   
-        # original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
-        # cv2.imwrite(f'./visualization/EVLoc_baseline/output/{i_batch:05d}_2_event_ori.png', original_overlay)
+        # flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
+        # cv2.imwrite(f"./visualization/EVLoc_baseline/output/{i_batch:05d}_flow_gt.png", flow_viz)   
+        original_overlay = overlay_imgs(event_input[0, :, :, :], lidar_input[0, 0, :, :]*0)
+        cv2.imwrite(f'./visualization/EVLoc_baseline/output/{i_batch:05d}_2_event_ori.png', original_overlay)
 
         # warp_depth = warp(lidar_input, -1 * flow_up)
         # original_overlay = overlay_imgs(event_input[0, :, :, :]*0, warp_depth[0, 0, :, :])
@@ -184,8 +186,8 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         # pred_overlay = overlay_imgs(event_input[0, :, :, :]*0, lidar_input_pred[0, 0, :, :])
         # cv2.imwrite(f'./visualization/output/{i_batch:05d}_3_depth_pred.png', pred_overlay)
 
-        # flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
-        # cv2.imwrite(f"./visualization/flow/{i_batch:05d}_flow.png", flow_viz)
+        flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
+        cv2.imwrite(f"./visualization/EVLoc_baseline/output/{i_batch:05d}_flow.png", flow_viz)
  
         
     epe_list = np.array(epe_list)

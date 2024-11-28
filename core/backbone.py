@@ -1211,8 +1211,8 @@ class Backbone_Fuse(nn.Module):
     def forward(self, image1, image2, iters=12, flow_init=None, test_mode=False, idx=0):
         """ 
             Estimate optical flow between pair of frames 
-            image1: lidar_input
-            image2: event_frame
+            image1: lidar_input Bx2xHxW
+            image2: event_frame Bx2xHxW
         """
 
         image1 = image1.contiguous()
@@ -1222,9 +1222,9 @@ class Backbone_Fuse(nn.Module):
         cdim = self.context_dim
 
         # detector edge
-        depth_to_edge = self.edge_detector(image1)
+        depth_to_edge = self.edge_detector(image1[:, 0, :, :].unsqueeze(1))
         depth_to_edge = 2 * depth_to_edge - 1.0
-        image1 = 2 * image1 - 1.0
+        image1 = 2 * image1[:, 1, :, :].unsqueeze(1) - 1.0
         image1 = torch.cat((depth_to_edge, image1), dim=1)
         # estimate depth
         event_to_depth = self.depth_estimator(image2)
