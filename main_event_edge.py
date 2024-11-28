@@ -58,6 +58,12 @@ def _init_fn(worker_id, seed):
 def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch):
     global occlusion_threshold, occlusion_kernel
     model.train()
+
+    # # deactivate edge detector
+    # for name, param in model.named_parameters():
+    #     if "edge_detector" in name:
+    #         param.requires_grad = False
+
     for i_batch, sample in enumerate(TrainImgLoader):
         event_frame = sample['event_frame']
         pc = sample['point_cloud']
@@ -75,13 +81,13 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         else:
             vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
         vis_event_time_image = vis_event_time_image[:, :, :3]
-        cv2.imwrite(f"./visualization/input/{i_batch:05d}_event.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
+        cv2.imwrite(f"./visualization/EVLoc_Edge/input/{i_batch:05d}_event.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
         if event_input.shape[1] == 1:
             vis_lidar_input = overlay_imgs(event_input[0, :, :, :].repeat(3, 1, 1)*0, lidar_input[0, 0, :, :])
         else:
             vis_lidar_input = overlay_imgs(event_input[0, :3, :, :]*0, lidar_input[0, 0, :, :])
         lidar_input[lidar_input==1000.] = 0.
-        cv2.imwrite(f"./visualization/input/{i_batch:05d}_depth.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
+        cv2.imwrite(f"./visualization/EVLoc_Edge/input/{i_batch:05d}_depth.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
 
         optimizer.zero_grad()
         ## flow loss
@@ -89,22 +95,25 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
         ## direct edge prediction loss
         ground_truth_depth_mask = depth_mask_gt[:, 0, :, :].long()
-        cv2.imwrite(f'./visualization/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth_depth_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        cv2.imwrite(f'./visualization/EVLoc_Edge/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth_depth_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
         depth_mask_bi = torch.cat((1.-depth_mask, depth_mask), dim=1)
-        loss_edge = ClassifyLoss(depth_mask_bi, ground_truth_depth_mask, lidar_input=lidar_input, loss_func="Masked_Weighted_Cross_Entropy_Loss")
+        loss_edge = ClassifyLoss(depth_mask_bi, ground_truth_depth_mask, lidar_input=lidar_input, loss_func="Weighted_Cross_Entropy_Loss")
         metrics['edge_loss'] = loss_edge.item()
         # warped edge prediction consistence loss
         ground_truth_event_mask = depth_mask_gt[:, 1, :, :].long()
-        cv2.imwrite(f'./visualization/input/{i_batch:05d}_event_mask_gt.png', (ground_truth_event_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        loss_consist = ClassifyLoss(depth_mask_bi, ground_truth_event_mask.unsqueeze(1).float(), flow=flow_preds[-1], lidar_input=lidar_input, loss_func="Masked_Inverse_Warped_Weighted_Cross_Entropy_Loss")
+        cv2.imwrite(f'./visualization/EVLoc_Edge/input/{i_batch:05d}_event_mask_gt.png', (ground_truth_event_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        loss_consist = ClassifyLoss(depth_mask_bi, ground_truth_event_mask.unsqueeze(1).float(), flow=flow_preds[-1], lidar_input=lidar_input, loss_func="Inverse_Warped_Weighted_Cross_Entropy_Loss")
         metrics['consist_loss'] = loss_consist.item()
 
         alpha = 100
         beta = 100
-        if args.edge_loss:
-            loss = loss_flow + alpha * loss_edge + beta * loss_consist
-        else:
-            loss = loss_flow + beta * loss_consist
+        loss = loss_flow
+        if args.only_edge_loss:
+            loss = loss_edge
+        if args.use_edge_loss:
+            loss += alpha * loss_edge
+        if args.use_consist_loss:
+            loss += beta * loss_consist
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -133,7 +142,7 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
         # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=600, w=960)
         event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_with_mask(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=296, w=512)
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask_gt.png', (depth_mask_gt[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        cv2.imwrite(f'./visualization/EVLoc_Edge/output/{i_batch:05d}_4_depth_mask_gt.png', (depth_mask_gt[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
         # original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach() * depth_mask_gt[0, 0, ...].detach())
         # cv2.imwrite(f'./visualization/output/{i_batch:05d}_3_masked_depth_gt.png', original_depth)
 
@@ -170,10 +179,10 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
 
         original_depth = overlay_imgs(event_input[0, :, :, :], 0 * lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_1_event_ori.png', original_depth)
+        cv2.imwrite(f'./visualization/EVLoc_Edge/output/{i_batch:05d}_1_event_ori.png', original_depth)
 
         original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_2_depth_ori.png', original_depth)
+        cv2.imwrite(f'./visualization/EVLoc_Edge/output/{i_batch:05d}_2_depth_ori.png', original_depth)
 
         # mask = torch.argmax(depth_mask, dim=1)
         # original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach() * mask[0, ...])
@@ -181,7 +190,7 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
 
         # mask = torch.argmax(depth_mask, dim=1)
         # cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask_pred.png', (mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        cv2.imwrite(f'./visualization/output/{i_batch:05d}_4_depth_mask_pred.png', (depth_mask[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        cv2.imwrite(f'./visualization/EVLoc_Edge/output/{i_batch:05d}_4_depth_mask_pred.png', (depth_mask[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
 
         # flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
@@ -278,7 +287,11 @@ if __name__ == '__main__':
                         dest='evaluate', 
                         action='store_true',
                         help='evaluate model on validation set')
-    parser.add_argument('--edge_loss', 
+    parser.add_argument('--only_edge_loss', 
+                        action='store_true')
+    parser.add_argument('--use_edge_loss', 
+                        action='store_true')
+    parser.add_argument('--use_consist_loss',
                         action='store_true')
     args = parser.parse_args()    
 
