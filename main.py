@@ -404,10 +404,10 @@ if __name__ == '__main__':
             results = {'m3ed-epe': epe, 'm3ed-f1': f1}
             logger.write_dict(results)
 
-            torch.save(model.state_dict(), f"./checkpoints/{{args.backbone}}/{datetime}/checkpoint.pth")
+            torch.save(model.state_dict(), f"./checkpoints/{args.backbone}/{datetime}/checkpoint.pth")
 
             if epe < min_val_err:
                 min_val_err = epe
-                torch.save(model.state_dict(), f'./checkpoints/{{args.backbone}}/{datetime}/best_model.pth')
+                torch.save(model.state_dict(), f'./checkpoints/{args.backbone}/{datetime}/best_model.pth')
             
             torch.cuda.empty_cache()
