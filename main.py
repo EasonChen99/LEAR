@@ -7,20 +7,15 @@ import numpy as np
 import argparse
 import random
 import torch
-import matplotlib.pyplot as plt
 
 from core.datasets_m3ed import DatasetM3ED as Dataset
-from core.backbone import Backbone_Fuse as Backbone
-from core.utils import count_parameters, merge_inputs, fetch_optimizer, Logger
+from core.backbone import Backbone_Event, Backbone_Fuse
+from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import warp, sequence_loss, ClassifyLoss, SigLoss, FuseConsistLoss
+from core.losses import warp, sequence_loss, ClassifyLoss, SigLoss
 from core.flow_viz import flow_to_image
-
-occlusion_kernel = 5
-occlusion_threshold = 3
-seed = 1234
 
 try:
     from torch.cuda.amp import GradScaler
@@ -43,22 +38,20 @@ except:
     
 
 def _init_fn(worker_id, seed):
-    seed = seed
+    seed = worker_id + seed
     print(f"Init worker {worker_id} with seed {seed}")
     os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    np.random.seed(seed)
-    random.seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
 
-def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch):
-    global occlusion_threshold, occlusion_kernel
+def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch, occlusion_kernel=5, occlusion_threshold=3):
     model.train()
-
     for i_batch, sample in enumerate(TrainImgLoader):
         event_frame = sample['event_frame']
         pc = sample['point_cloud']
@@ -67,67 +60,60 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         R_err = sample['rot_error']
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
-        # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=600, w=960)
-        event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
+        if args.backbone == "baseline":
+            event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
+        elif args.backbone == "fuse":
+            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
+            event2depth_gt = depth_input[:, 2, :, :].unsqueeze(1)
+            depth_input = depth_input[:, 0, :, :].unsqueeze(1)
+        else:
+            raise "Specified backbone doesn't exist"
 
-        event2depth_gt = lidar_input[:, 2, :, :].unsqueeze(1)
-        lidar_input = lidar_input[:, :2, :, :]
-
+        visualization_folder = f"./visualization/{args.backbone}"
+        if not os.path.exists(visualization_folder):
+            os.makedirs(f"{visualization_folder}/train")
+            os.makedirs(f"{visualization_folder}/test")
         vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
         vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
-        vis_event_time_image = vis_event_time_image[:, :, :3]
-        cv2.imwrite(f"./visualization/EVLoc_Fuse/input/{i_batch:05d}_event.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
-        vis_lidar_input = overlay_imgs(event_input[0, :3, :, :]*0, lidar_input[0, 0, :, :])
-        lidar_input[lidar_input==1000.] = 0.
-        cv2.imwrite(f"./visualization/EVLoc_Fuse/input/{i_batch:05d}_depth.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
-        vis_lidar_input = overlay_imgs(event_input[0, :3, :, :]*0, lidar_input[0, 1, :, :])
-        lidar_input[lidar_input==1000.] = 0.
-        cv2.imwrite(f"./visualization/EVLoc_Fuse/input/{i_batch:05d}_depth_dense.png", (vis_lidar_input / np.max(vis_lidar_input) * 255).astype(np.uint8))
-        vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
-        event2depth_gt[event2depth_gt==1000.] = 0.
-        cv2.imwrite(f"./visualization/EVLoc_Fuse/input/{i_batch:05d}_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
+        vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
+        cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_1_1_event_input.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
+        vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
+        cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
+        flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
+        cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
+        if args.backbone == "fuse":
+            vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
+            cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
+            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
+            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
         optimizer.zero_grad()
-        flow_preds, depth_mask, event2depth = model(lidar_input, event_input, iters=args.iters)
-
-        ## flow loss
-        loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-        ## direct edge prediction loss
-        ground_truth_depth_mask = depth_mask_gt[:, 0, :, :].long()
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/input/{i_batch:05d}_depth_mask_gt.png', (ground_truth_depth_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        depth_mask_bi = torch.cat((1.-depth_mask, depth_mask), dim=1)
-        loss_edge = ClassifyLoss(depth_mask_bi, ground_truth_depth_mask, lidar_input=lidar_input, loss_func="Weighted_Cross_Entropy_Loss")
-        metrics['edge_loss'] = loss_edge.item()
-        # depth estimation loss
-        loss_depth_fn = SigLoss()
-        loss_depth = loss_depth_fn(event2depth, event2depth_gt)
-        metrics['depth_loss'] = loss_depth.item()
-        # consistence loss
-        ground_truth_event_mask = depth_mask_gt[:, 1, :, :].long()
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/input/{i_batch:05d}_event_mask_gt.png', (ground_truth_event_mask[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        # loss_consist = ClassifyLoss(depth_mask_bi, ground_truth_event_mask.unsqueeze(1).float(), flow=flow_preds[-1], lidar_input=lidar_input, loss_func="Inverse_Warped_Weighted_Cross_Entropy_Loss")
-        loss_consist = FuseConsistLoss(ground_truth_event_mask.unsqueeze(1).float(), depth_mask_bi, 
-                                       lidar_input[:, 0, :, :].unsqueeze(1), event2depth, 
-                                       flow_pre)
-        metrics['consist_loss'] = loss_consist.item()
-
-
-        mask_edge = ground_truth_depth_mask > 0
-        mask_flow = (flow_gt[:, 0, :, :] != 0) + (flow_gt[:, 1, :, :] != 0)
-        mask_common = mask_edge * mask_flow
-
-        alpha = 100
-        beta = 100
-        theta = 100
-        loss = loss_flow
-        if args.only_edge_loss:
-            loss = loss_edge
-        if args.use_edge_loss:
-            loss += alpha * loss_edge
-        if args.use_depth_loss:
-            loss += theta * loss_depth
-        if args.use_consist_loss:
-            loss += beta * loss_consist
+        if args.backbone == "baseline":
+            flow_preds = model(depth_input, event_input, iters=args.iters)
+            loss, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+        elif args.backbone == "fuse":
+            flow_preds, depth2edge, event2depth = model(depth_input, event_input, iters=args.iters)
+            ## flow loss
+            loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+            flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
+            cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+            ## edge loss
+            depth2edge_bi = torch.cat((1.-depth2edge, depth2edge), dim=1)
+            loss_edge = ClassifyLoss(depth2edge_bi, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
+            metrics['edge_loss'] = loss_edge.item()
+            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            ## depth loss
+            loss_depth_fn = SigLoss()
+            loss_depth = loss_depth_fn(event2depth, event2depth_gt)
+            metrics['depth_loss'] = loss_depth.item()
+            original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
+            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_1_3_event2depth_pred.png', original_depth)
+            alpha = 1
+            beta = 100
+            theta = 100
+            loss = alpha * loss_flow + beta * loss_edge + theta * loss_depth
+        else:
+            raise "Specified backbone doesn't exist"
 
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
@@ -139,8 +125,7 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
 
         logger.push(metrics)
 
-def test(args, TestImgLoader, model, device, cal_pose=False):
-    global occlusion_threshold, occlusion_kernel
+def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_threshold=3, cal_pose=False):
     model.eval()
     out_list, epe_list = [], []
     Time = 0.
@@ -154,22 +139,44 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         R_err = sample['rot_error']
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
-        # event_input, lidar_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=600, w=960)
-        event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_3_depth2edge_gt.png', (depth_mask_gt[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-
-        event_input, lidar_input, flow_gt, depth_mask_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_3_event2edge_gt.png', (depth_mask_gt[0, 1, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-
-        event2depth_gt = lidar_input[:, 2, :, :].unsqueeze(1)
-        lidar_input = lidar_input[:, :2, :, :]
-
-        original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth_gt[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_4_event2depth_gt.png', original_depth)
-
+        if args.backbone == "baseline":
+            event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
+        elif args.backbone == "fuse":
+            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
+            event2depth_gt = depth_input[:, 2, :, :].unsqueeze(1)
+            depth_input = depth_input[:, 0, :, :].unsqueeze(1)
+        else:
+            raise "Specified backbone doesn't exist"
 
         end = time.time()
-        _, flow_up, depth_mask, event2depth = model(lidar_input, event_input, iters=24, test_mode=True, idx=i_batch)
+        if args.backbone == "baseline":
+            _, flow_up = model(depth_input, event_input, iters=24, test_mode=True, idx=i_batch)
+        elif args.backbone == "fuse":
+            _, flow_up, depth2edge, event2depth = model(depth_input, event_input, iters=24, test_mode=True, idx=i_batch)
+
+
+        visualization_folder = f"./visualization/{args.backbone}"
+        if not os.path.exists(visualization_folder):
+            os.makedirs(f"{visualization_folder}/train")
+            os.makedirs(f"{visualization_folder}/test")
+        vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
+        vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
+        vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_1_event_input.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
+        vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
+        flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
+        if args.backbone == "fuse":
+            vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
+            cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
+            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
+            cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_1_3_event2depth_pred.png', original_depth)
 
         epe = torch.sum((flow_up - flow_gt) ** 2, dim=1).sqrt()
         mag = torch.sum(flow_gt ** 2, dim=1).sqrt()
@@ -186,36 +193,20 @@ def test(args, TestImgLoader, model, device, cal_pose=False):
         epe_list.append(epe[val].mean().item())
         out_list.append(out[val].cpu().numpy())
 
-
         if cal_pose:
-            # R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, lidar_input, calib, MAX_DEPTH=args.max_depth, x=60, y=160, h=600, w=960)
-            R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, lidar_input[:, 0, :, :].unsqueeze(0), calib, MAX_DEPTH=args.max_depth, x=32, y=64, h=296, w=512)
+            R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=36, y=64, h=288, w=512)
 
             Time += time.time() - end
             if flag:
                 outliers.append(i_batch)
+                continue
             else:
                 err_r, err_t = err_Pose(R_pred, T_pred, R_err[0], T_err[0])
                 err_r_list.append(err_r.item())
                 err_t_list.append(err_t.item())
             print(f"{i_batch:05d}: {np.mean(err_t_list):.5f} {np.mean(err_r_list):.5f} {np.median(err_t_list):.5f} "
                   f"{np.median(err_r_list):.5f} {len(outliers)} {Time / (i_batch+1):.5f}")
-
-
-        original_depth = overlay_imgs(event_input[0, :, :, :], 0 * lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_1_event_ori.png', original_depth)
-
-        original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_2_depth_ori.png', original_depth)
-        original_depth = overlay_imgs(event_input[0, :, :, :]*0, lidar_input[0, 1, :, :].detach())
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_2_depth_ori_dense.png', original_depth)
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_3_depth2edge_pred.png', (depth_mask[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
-        cv2.imwrite(f'./visualization/EVLoc_Fuse/output/{i_batch:05d}_4_event2depth_pred.png', original_depth)
-
-        flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
-        cv2.imwrite(f"./visualization/EVLoc_Fuse/output/{i_batch:05d}_5_flow.png", flow_viz)
-        
+              
     epe_list = np.array(epe_list)
     out_list = np.concatenate(out_list)
 
@@ -236,7 +227,7 @@ if __name__ == '__main__':
     parser.add_argument('--ev_input', 
                         '--event_representation',
                         type=str,
-                        default='ours_denoise_pre_100000')
+                        default='ours_denoise_stc_trail_pre_100000_half')
     parser.add_argument('--test_sequence',
                         type=str, 
                         default='falcon_indoor_flight_3')
@@ -307,41 +298,37 @@ if __name__ == '__main__':
                         dest='evaluate', 
                         action='store_true',
                         help='evaluate model on validation set')
-    parser.add_argument('--only_edge_loss', 
-                        action='store_true')
-    parser.add_argument('--use_edge_loss', 
-                        action='store_true')
-    parser.add_argument('--use_consist_loss',
-                        action='store_true')
-    parser.add_argument('--use_depth_loss',
-                        action='store_true')
+    parser.add_argument('--backbone',
+                        type=str,
+                        default='baseline')
     args = parser.parse_args()    
-
-
+    
+    ## set key parameters
+    occlusion_kernel = 5
+    occlusion_threshold = 3
+    seed = 1234
     device = torch.device(f"cuda:{args.gpus[0]}" if torch.cuda.is_available() else "cpu")
     os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
     torch.cuda.set_device(args.gpus[0])
-
     batch_size = args.batch_size
 
-    model = torch.nn.DataParallel(Backbone(args), device_ids=args.gpus)
+    ## initialize using fixed seed
+    _init_fn(0, seed)
+
+    if args.backbone == "baseline":
+        model = torch.nn.DataParallel(Backbone_Event(args), device_ids=args.gpus)
+    elif args.backbone == "fuse":
+        model = torch.nn.DataParallel(Backbone_Fuse(args), device_ids=args.gpus)
+    else:
+        raise "Specified backbone doesn't exist"
     print("Parameter Count: %d" % count_parameters(model))
     if args.load_checkpoints is not None:
         model.load_state_dict(torch.load(args.load_checkpoints))
-    # if args.load_checkpoints1 is not None and args.load_checkpoints2 is not None:
-    #     checkpoint1 = torch.load(args.load_checkpoints1)
-    #     checkpoint2 = torch.load(args.load_checkpoints2)
-    #     combined_state_dict = {}
-    #     for key in checkpoint2:
-    #         if key in checkpoint1:
-    #             print("checkpoint1: ", key)
-    #             combined_state_dict[key] = checkpoint1[key]
-    #         else:
-    #             print("checkpoint2: ", key)
-    #             combined_state_dict[key] = checkpoint2[key]
-    #     model.load_state_dict(combined_state_dict)
     model.to(device)
-    
+
+    ## reinitialize using fixed seed
+    _init_fn(0, seed)
+
     def init_fn(x):
         return _init_fn(x, seed)
 
@@ -361,7 +348,9 @@ if __name__ == '__main__':
                                                 pin_memory=True)
     if args.evaluate:
         with torch.no_grad():
-            err_t_list, err_r_list, outliers, Time, epe, f1 = test(args, TestImgLoader, model, device, cal_pose=True)
+            err_t_list, err_r_list, outliers, Time, epe, f1 = test(args, TestImgLoader, model, device, 
+                                                                   occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold, 
+                                                                   cal_pose=True)
             print(f"Mean trans error {np.mean(err_t_list):.5f}  Mean rotation error {np.mean(err_r_list):.5f}")
             print(f"Median trans error {np.median(err_t_list):.5f}  Median rotation error {np.median(err_r_list):.5f}")
             print(f"epe {epe:.5f}  Mean {Time / len(TestImgLoader):.5f} per frame")
@@ -390,8 +379,8 @@ if __name__ == '__main__':
     logger = Logger(model, scheduler, SUM_FREQ=100)
 
     datetime = time.strftime('%Y-%m-%d-%H-%M-%S',time.localtime(time.time()))
-    if not os.path.exists(f'./checkpoints/{datetime}'):
-        os.mkdir(f'./checkpoints/{datetime}')
+    if not os.path.exists(f'./checkpoints/{args.backbone}/{datetime}'):
+        os.makedirs(f'./checkpoints/{args.backbone}/{datetime}')
 
     starting_epoch = args.starting_epoch
     if starting_epoch > 0:
@@ -404,17 +393,21 @@ if __name__ == '__main__':
 
     min_val_err = 9999.
     for epoch in range(starting_epoch, args.epochs):
-        train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch)
+        train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch, occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold, )
+
+        torch.cuda.empty_cache()
 
         if epoch % args.evaluate_interval == 0:
-            epe, f1 = test(args, TestImgLoader, model, device)
+            epe, f1 = test(args, TestImgLoader, model, device, occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold)
             print("Validation M3ED: %f, %f" % (epe, f1))
 
             results = {'m3ed-epe': epe, 'm3ed-f1': f1}
             logger.write_dict(results)
 
-            torch.save(model.state_dict(), f"./checkpoints/{datetime}/checkpoint.pth")
+            torch.save(model.state_dict(), f"./checkpoints/{{args.backbone}}/{datetime}/checkpoint.pth")
 
             if epe < min_val_err:
                 min_val_err = epe
-                torch.save(model.state_dict(), f'./checkpoints/{datetime}/best_model.pth')
+                torch.save(model.state_dict(), f'./checkpoints/{{args.backbone}}/{datetime}/best_model.pth')
+            
+            torch.cuda.empty_cache()

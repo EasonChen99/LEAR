@@ -134,7 +134,7 @@ class Data_preprocess:
     
 
     def push(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
-        lidar_input = []
+        depth_input = []
         rgb_input = []
         flow_gt = []
 
@@ -204,17 +204,17 @@ class Data_preprocess:
                 = self.DownsampleCrop_M3ED_delta(rgb, depth_img_no_occlusion_RT_training, project_delta_P, split, h=h, w=w)
 
             rgb_input.append(rgb)
-            lidar_input.append(depth_img_no_occlusion_RT_training)
+            depth_input.append(depth_img_no_occlusion_RT_training)
             flow_gt.append(project_delta_P)
 
-        lidar_input = torch.stack(lidar_input)
+        depth_input = torch.stack(depth_input)
         rgb_input = torch.stack(rgb_input)
         flow_gt = torch.stack(flow_gt)
 
-        return rgb_input, lidar_input, flow_gt
+        return rgb_input, depth_input, flow_gt
 
     def push_dense_flow(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
-        lidar_input = []
+        depth_input = []
         rgb_input = []
         flow_gt = []
 
@@ -298,17 +298,17 @@ class Data_preprocess:
                 = self.DownsampleCrop_M3ED_delta(rgb, depth_img_no_occlusion_RT_training, project_delta_P, split, h=h, w=w)
 
             rgb_input.append(rgb)
-            lidar_input.append(depth_img_no_occlusion_RT_training)
+            depth_input.append(depth_img_no_occlusion_RT_training)
             flow_gt.append(project_delta_P)
 
-        lidar_input = torch.stack(lidar_input)
+        depth_input = torch.stack(depth_input)
         rgb_input = torch.stack(rgb_input)
         flow_gt = torch.stack(flow_gt)
 
-        return rgb_input, lidar_input, flow_gt
+        return rgb_input, depth_input, flow_gt
 
     def push_use_mask(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
-        lidar_input = []
+        depth_input = []
         rgb_input = []
         flow_gt = []
 
@@ -394,17 +394,17 @@ class Data_preprocess:
                 = self.DownsampleCrop_M3ED_delta(rgb, depth_img_no_occlusion_RT_training, project_delta_P, split, h=h, w=w)
 
             rgb_input.append(rgb)
-            lidar_input.append(depth_img_no_occlusion_RT_training)
+            depth_input.append(depth_img_no_occlusion_RT_training)
             flow_gt.append(project_delta_P)
 
-        lidar_input = torch.stack(lidar_input)
+        depth_input = torch.stack(depth_input)
         rgb_input = torch.stack(rgb_input)
         flow_gt = torch.stack(flow_gt)
 
-        return rgb_input, lidar_input, flow_gt
+        return rgb_input, depth_input, flow_gt
 
     def push_use_mask_plus(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
-        lidar_input = []
+        depth_input = []
         lidar_mask_input = []
         rgb_input = []
         flow_gt = []
@@ -492,19 +492,19 @@ class Data_preprocess:
 
 
             rgb_input.append(rgb)
-            lidar_input.append(depth_img_no_occlusion_RT_training)
+            depth_input.append(depth_img_no_occlusion_RT_training)
             lidar_mask_input.append(mask_depth_img_no_occlusion_RT_training)
             flow_gt.append(project_delta_P)
 
-        lidar_input = torch.stack(lidar_input)
+        depth_input = torch.stack(depth_input)
         lidar_mask_input = torch.stack(lidar_mask_input)
         rgb_input = torch.stack(rgb_input)
         flow_gt = torch.stack(flow_gt)
 
-        return rgb_input, lidar_input, lidar_mask_input, flow_gt
+        return rgb_input, depth_input, lidar_mask_input, flow_gt
 
     def push_with_mask(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
-        lidar_input = []
+        depth_input = []
         rgb_input = []
         flow_gt = []
         depth_mask_gt = []
@@ -593,20 +593,27 @@ class Data_preprocess:
                 = self.DownsampleCrop_M3ED_delta_mask(rgb, depth_img_no_occlusion_RT_training, project_delta_P, depth_mask, split, h=h, w=w)
 
             rgb_input.append(rgb)
-            lidar_input.append(depth_img_no_occlusion_RT_training)
+            depth_input.append(depth_img_no_occlusion_RT_training)
             flow_gt.append(project_delta_P)
             depth_mask_gt.append(depth_mask)
 
-        lidar_input = torch.stack(lidar_input)
+        depth_input = torch.stack(depth_input)
         rgb_input = torch.stack(rgb_input)
         flow_gt = torch.stack(flow_gt)
         depth_mask_gt = torch.stack(depth_mask_gt)
         
 
-        return rgb_input, lidar_input, flow_gt, depth_mask_gt
+        return rgb_input, depth_input, flow_gt, depth_mask_gt
 
     def push_fuse(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
-        lidar_input = []
+        """
+            output:
+                    rgb_input:      Bx2xHxW
+                    depth_input:    Bx3xHxW (depth_input, depth_input_dense, depth_gt)
+                    flow_gt:        Bx2xHxW
+                    depth_mask_gt:  Bx2xHxW (edge_mask, event_mask)
+        """
+        depth_input = []
         rgb_input = []
         flow_gt = []
         depth_mask_gt = []
@@ -621,7 +628,6 @@ class Data_preprocess:
             R.resize_4x4()
             T = mathutils.Matrix.Translation(T_errs[idx].to(device))
             RT = mathutils.Matrix(np.matmul(np.asarray(T), np.asarray(R)))
-
 
             cam_params = self.calibs[idx]
             cam_model = CameraModel()
@@ -670,7 +676,6 @@ class Data_preprocess:
             depth_img_no_occlusion_RT_training_dense = depth_img_no_occlusion_RT_training_dense.unsqueeze(0)
             depth_img_no_occlusion_RT_training = torch.cat((depth_img_no_occlusion_RT_training, depth_img_no_occlusion_RT_training_dense), dim=0)
 
-
             # make depth image for generating depth mask
             depth_img_no_occlusion, _ = \
                 self.gen_depth_img(uv, depth, VI_indexes[VI_indexes], cam_params)
@@ -688,7 +693,6 @@ class Data_preprocess:
             depth_mask = depth_img_no_occlusion_masked_RT>0
             depth_mask = torch.cat((depth_mask, event_mask.unsqueeze(0)), dim=0)
 
-
             mask1 = indexes_uv_fresh > 0
             mask2 = indexes_uvRT_fresh > 0
             mask = mask1 & mask2
@@ -702,20 +706,20 @@ class Data_preprocess:
                 = self.DownsampleCrop_M3ED_delta_mask(rgb, depth_img_no_occlusion_RT_training, project_delta_P, depth_mask, split, h=h, w=w)
 
             rgb_input.append(rgb)
-            lidar_input.append(depth_img_no_occlusion_RT_training)
+            depth_input.append(depth_img_no_occlusion_RT_training)
             flow_gt.append(project_delta_P)
             depth_mask_gt.append(depth_mask)
 
-        lidar_input = torch.stack(lidar_input)
+        depth_input = torch.stack(depth_input)
         rgb_input = torch.stack(rgb_input)
         flow_gt = torch.stack(flow_gt)
         depth_mask_gt = torch.stack(depth_mask_gt)
         
 
-        return rgb_input, lidar_input, flow_gt, depth_mask_gt
+        return rgb_input, depth_input, flow_gt, depth_mask_gt
 
     def push_fuse_dense_flow(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
-        lidar_input = []
+        depth_input = []
         rgb_input = []
         flow_gt = []
         depth_mask_gt = []
@@ -746,9 +750,9 @@ class Data_preprocess:
             
             ## complete point cloud
             depth_img_no_occlusion_RT_training, _ = self.gen_depth_img(uv_RT, depth_RT, VI_indexes_RT[VI_indexes_RT], cam_params)
-            depth_img_no_occlusion_RT_training = sparse_to_dense(depth_img_no_occlusion_RT_training.cpu().detach().numpy())
-            depth_img_no_occlusion_RT_training = torch.tensor(depth_img_no_occlusion_RT_training, device=device)
-            pc_rotated = cam_model.depth2pc(depth_img_no_occlusion_RT_training)
+            depth_img_no_occlusion_RT_training_dense = sparse_to_dense(depth_img_no_occlusion_RT_training.cpu().detach().numpy())
+            depth_img_no_occlusion_RT_training_dense = torch.tensor(depth_img_no_occlusion_RT_training_dense, device=device)
+            pc_rotated = cam_model.depth2pc(depth_img_no_occlusion_RT_training_dense)
             pc_rotated = torch.tensor(pc_rotated, device=device)
             pc = rotate_forward(pc_rotated, RT)
 
@@ -784,6 +788,9 @@ class Data_preprocess:
             ## make depth_image for training
             depth_img_no_occlusion_RT_training /= MAX_DEPTH
             depth_img_no_occlusion_RT_training = depth_img_no_occlusion_RT_training.unsqueeze(0)
+            depth_img_no_occlusion_RT_training_dense /= MAX_DEPTH
+            depth_img_no_occlusion_RT_training_dense = depth_img_no_occlusion_RT_training_dense.unsqueeze(0)
+            depth_img_no_occlusion_RT_training = torch.cat((depth_img_no_occlusion_RT_training, depth_img_no_occlusion_RT_training_dense), dim=0)
 
             # make depth image for generating depth mask
             depth_img_no_occlusion, _ = \
@@ -814,20 +821,20 @@ class Data_preprocess:
                 = self.DownsampleCrop_M3ED_delta_mask(rgb, depth_img_no_occlusion_RT_training, project_delta_P, depth_mask, split, h=h, w=w)
 
             rgb_input.append(rgb)
-            lidar_input.append(depth_img_no_occlusion_RT_training)
+            depth_input.append(depth_img_no_occlusion_RT_training)
             flow_gt.append(project_delta_P)
             depth_mask_gt.append(depth_mask)
 
-        lidar_input = torch.stack(lidar_input)
+        depth_input = torch.stack(depth_input)
         rgb_input = torch.stack(rgb_input)
         flow_gt = torch.stack(flow_gt)
         depth_mask_gt = torch.stack(depth_mask_gt)
         
 
-        return rgb_input, lidar_input, flow_gt, depth_mask_gt
+        return rgb_input, depth_input, flow_gt, depth_mask_gt
 
     def push_input(self, rgbs, pcs, T_errs, R_errs, device, MAX_DEPTH=10., h=600, w=960, split='train'):
-        lidar_input = []
+        depth_input = []
         rgb_input = []
         x_list = []
         y_list = []
@@ -871,12 +878,12 @@ class Data_preprocess:
             y_list.append(y)
 
             rgb_input.append(rgb)
-            lidar_input.append(depth_img_no_occlusion_RT_training)
+            depth_input.append(depth_img_no_occlusion_RT_training)
 
-        lidar_input = torch.stack(lidar_input)
+        depth_input = torch.stack(depth_input)
         rgb_input = torch.stack(rgb_input)
 
-        return rgb_input, lidar_input, x_list, y_list
+        return rgb_input, depth_input, x_list, y_list
     
     def push_flow(self, rgbs, pcs, T_errs, R_errs, x_list, y_list, device, offsets=None):
         flow_gt = []

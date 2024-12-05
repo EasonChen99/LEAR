@@ -210,18 +210,15 @@ def ClassifyLoss(depth_mask, ground_truth, flow=None, mask=None, loss_func="Cros
         weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
         criterion = nn.CrossEntropyLoss(weight=weights)
         loss = criterion(depth_mask, ground_truth)
-    # elif loss_func == "Masked_Weighted_Cross_Entropy_Loss":
-    #     # masked weighted cross-entropy loss
-    #     if lidar_input == None:
-    #         raise "depth input doesn't exist"
-    #     mask = lidar_input > 0
-    #     count_neg = (ground_truth[mask[:, 0, ...]] == 0).sum()
-    #     count_pos = (ground_truth[mask[:, 0, ...]] == 1).sum()
-    #     beta = count_neg / (count_neg + count_pos)
-    #     pos_weight = beta / (1 - beta)
-    #     weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
-    #     criterion = nn.CrossEntropyLoss(weight=weights)
-    #     loss = criterion(depth_mask[mask.repeat(1, 2, 1, 1)].view(1, 2, -1), ground_truth[mask[:, 0, ...]].view(1, -1))
+    elif loss_func == "Masked_Weighted_Cross_Entropy_Loss":
+        # masked weighted cross-entropy loss
+        count_neg = (ground_truth[mask[:, 0, ...]] == 0).sum()
+        count_pos = (ground_truth[mask[:, 0, ...]] == 1).sum()
+        beta = count_neg / (count_neg + count_pos)
+        pos_weight = beta / (1 - beta)
+        weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
+        criterion = nn.CrossEntropyLoss(weight=weights)
+        loss = criterion(depth_mask[mask.repeat(1, 2, 1, 1)].view(1, 2, -1), ground_truth[mask[:, 0, ...]].view(1, -1))
     elif loss_func == "Warped_Weighted_Cross_Entropy_Loss":
          # warped weighted cross-entropy loss
         if flow == None:
@@ -328,17 +325,15 @@ class SigLoss(nn.Module):
 
 def FuseConsistLoss(edge_gt, edge_pre, depth_gt, depth_pre, flow_pre, flow_gt):
     loss = 0.
-    flow_mask = (flow_gt[:, 0, :, :] != 0) + (flow_gt[:, 1, :, :] != 0)
+    flow_mask = ((flow_gt[:, 0, :, :] != 0) + (flow_gt[:, 1, :, :] != 0)).unsqueeze(1)
     loss_edge = ClassifyLoss(edge_pre, edge_gt, flow=flow_pre, mask=flow_mask, loss_func="Masked_Inverse_Warped_Weighted_Cross_Entropy_Loss")
     loss_depth_fn = SigLoss()
     warp_depth_gt = warp(depth_gt, flow_pre)
     warp_depth_gt *= flow_mask
-    warp_depth_pre *= flow_mask
+    depth_pre *= flow_mask
     loss_depth = loss_depth_fn(depth_pre, warp_depth_gt)
 
     return loss_edge + loss_depth
-
-
 
 
 

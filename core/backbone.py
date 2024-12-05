@@ -1103,7 +1103,7 @@ class E2VID(BaseE2VID):
     def __init__(self):
         super(E2VID, self).__init__()
 
-        self.unet = UNet(num_input_channels=2,
+        self.unet = UNet(num_input_channels=1,
                          num_output_channels=1,
                          skip_type='sum',
                          activation='sigmoid',
@@ -1221,18 +1221,21 @@ class Backbone_Fuse(nn.Module):
         hdim = self.hidden_dim
         cdim = self.context_dim
 
-        # detector edge
-        depth_to_edge = self.edge_detector(image1[:, 0, :, :].unsqueeze(1))
-        depth_to_edge = 2 * depth_to_edge - 1.0
-        image1 = 2 * image1[:, 1, :, :].unsqueeze(1) - 1.0
-        image1 = torch.cat((depth_to_edge, image1), dim=1)
-        # estimate depth
-        event_to_depth = self.depth_estimator(image2)
-        event_to_depth = 2 * event_to_depth - 1.0
-        image2 = (image2[:, 0, ...] > 0) + (image2[:, 1, ...] > 0)
-        image2 = 2 * image2.unsqueeze(1).float() - 1.0
-        image2 = torch.cat((image2, event_to_depth), dim=1)
+        ## detector edge
+        depth_to_edge = self.edge_detector(image1)
+        ## estimate depth
+        image2 = ((image2[:, 0, ...] > 0) + (image2[:, 1, ...] > 0)).unsqueeze(1).float()
+        edge_to_depth = self.depth_estimator(image2)
 
+        # depth_to_edge_to_depth = self.depth_estimator(depth_to_edge)
+        # edge_to_depth_to_edge = self.edge_detector(edge_to_depth)
+
+        depth_to_edge = 2 * depth_to_edge - 1.0
+        image1 = 2 * image1 - 1.0
+        image1 = torch.cat((depth_to_edge, image1), dim=1)
+        edge_to_depth = 2 * edge_to_depth - 1.0
+        image2 = 2 * image2 - 1.0
+        image2 = torch.cat((image2, edge_to_depth), dim=1)
 
         # run the feature network
         with autocast(enabled=self.args.mixed_precision):
@@ -1286,9 +1289,11 @@ class Backbone_Fuse(nn.Module):
 
         # restore range of prediction
         depth_to_edge = (depth_to_edge+1.)/2.
-        event_to_depth = (event_to_depth+1.)/2.
+        edge_to_depth = (edge_to_depth+1.)/2.
+        # depth_to_edge_to_depth = (depth_to_edge_to_depth+1.)/2.
+        # edge_to_depth_to_edge = (edge_to_depth_to_edge+1.)/2.
 
         if test_mode:
-            return coords1 - coords0, flow_up, depth_to_edge, event_to_depth
+            return coords1 - coords0, flow_up, depth_to_edge, edge_to_depth
             
-        return flow_predictions, depth_to_edge, event_to_depth
+        return flow_predictions, depth_to_edge, edge_to_depth
