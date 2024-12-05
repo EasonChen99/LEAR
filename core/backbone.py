@@ -1103,7 +1103,7 @@ class E2VID(BaseE2VID):
     def __init__(self):
         super(E2VID, self).__init__()
 
-        self.unet = UNet(num_input_channels=2[],
+        self.unet = UNet(num_input_channels=2,
                          num_output_channels=1,
                          skip_type='sum',
                          activation='sigmoid',
