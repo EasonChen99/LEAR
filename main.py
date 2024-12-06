@@ -9,7 +9,7 @@ import random
 import torch
 
 from core.datasets_m3ed import DatasetM3ED as Dataset
-from core.backbone import Backbone_Event, Backbone_Fuse
+from core.backbone import Backbone_Event, Backbone_Fuse, Backbone_Edge
 from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
@@ -66,6 +66,9 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
             event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
             event2depth_gt = depth_input[:, 2, :, :].unsqueeze(1)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
+        elif args.backbone == "edge":
+            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
+            depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         else:
             raise "Specified backbone doesn't exist"
 
@@ -86,11 +89,16 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
             cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
             ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
             cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        if args.backbone == "edge":
+            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
+            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
         optimizer.zero_grad()
         if args.backbone == "baseline":
             flow_preds = model(depth_input, event_input, iters=args.iters)
             loss, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+            flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
+            cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
         elif args.backbone == "fuse":
             flow_preds, depth2edge, event2depth = model(depth_input, event_input, iters=args.iters)
             ## flow loss
@@ -112,6 +120,19 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
             beta = 100
             theta = 100
             loss = alpha * loss_flow + beta * loss_edge + theta * loss_depth
+        elif args.backbone == "edge":
+            flow_preds, depth2edge = model(depth_input, event_input, iters=args.iters)
+            ## flow loss
+            loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+            flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
+            cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+            depth2edge_bi = torch.cat((1.-depth2edge, depth2edge), dim=1)
+            loss_edge = ClassifyLoss(depth2edge_bi, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
+            metrics['edge_loss'] = loss_edge.item()
+            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            alpha = 1
+            beta = 100
+            loss = alpha * loss_flow + beta * loss_edge
         else:
             raise "Specified backbone doesn't exist"
 
@@ -145,6 +166,9 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
             event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
             event2depth_gt = depth_input[:, 2, :, :].unsqueeze(1)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
+        elif args.backbone == "edge":
+            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
+            depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         else:
             raise "Specified backbone doesn't exist"
 
@@ -153,7 +177,8 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
             _, flow_up = model(depth_input, event_input, iters=24, test_mode=True, idx=i_batch)
         elif args.backbone == "fuse":
             _, flow_up, depth2edge, event2depth = model(depth_input, event_input, iters=24, test_mode=True, idx=i_batch)
-
+        elif args.backbone == "edge":
+            _, flow_up, depth2edge = model(depth_input, event_input, iters=24, test_mode=True, idx=i_batch)
 
         visualization_folder = f"./visualization/{args.backbone}"
         if not os.path.exists(visualization_folder):
@@ -167,16 +192,20 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
         flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
         cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
+        flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
         if args.backbone == "fuse":
             vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
             cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
             ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
             cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
-            cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
             cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
             original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
             cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_1_3_event2depth_pred.png', original_depth)
+        if args.backbone == "edge":
+            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
         epe = torch.sum((flow_up - flow_gt) ** 2, dim=1).sqrt()
         mag = torch.sum(flow_gt ** 2, dim=1).sqrt()
@@ -319,6 +348,8 @@ if __name__ == '__main__':
         model = torch.nn.DataParallel(Backbone_Event(args), device_ids=args.gpus)
     elif args.backbone == "fuse":
         model = torch.nn.DataParallel(Backbone_Fuse(args), device_ids=args.gpus)
+    elif args.backbone == "edge":
+        model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)
     else:
         raise "Specified backbone doesn't exist"
     print("Parameter Count: %d" % count_parameters(model))

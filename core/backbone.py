@@ -752,12 +752,6 @@ class Backbone_Edge(nn.Module):
             image1: lidar_input
             image2: event_frame
         """
-        image1 = 2 * image1 - 1.0
-        image2 = 2 * image2 - 1.0
-
-        # print(torch.min(image1), torch.max(image1))
-        # print(torch.min(image2), torch.max(image2))
-
         image1 = image1.contiguous()
         image2 = image2.contiguous()
 
@@ -766,9 +760,11 @@ class Backbone_Edge(nn.Module):
 
         # detector edge mask
         edge_mask = self.edge_detector(image1)
-        # image1 = 2 * edge_mask - 1.0
         image1 = image1 * edge_mask
+        image1 = (image1 - torch.min(image1)) / (torch.max(image1) - torch.min(image1) + 1e-5)
 
+        image1 = 2 * image1 - 1.0
+        image2 = 2 * image2 - 1.0
 
         # run the feature network
         with autocast(enabled=self.args.mixed_precision):
