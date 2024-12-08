@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+from quaternion_distances import quaternion_distance
 import numpy as np
 import visibility
 
@@ -341,6 +342,24 @@ def FeatureTransferLoss(feature, feature_guide):
 
     return F.mse_loss(feature, feature_guide)
 
+
+
+class ProposedLoss(nn.Module):
+    def __init__(self, rescale_trans, rescale_rot):
+        super(ProposedLoss, self).__init__()
+        self.rescale_trans = rescale_trans
+        self.rescale_rot = rescale_rot
+        self.transl_loss = nn.SmoothL1Loss(reduction='none')
+
+    def forward(self, target_transl, target_rot, transl_err, rot_err):
+        loss_transl = 0.
+        if self.rescale_trans != 0.:
+            loss_transl = self.transl_loss(transl_err, target_transl).sum(1).mean()
+        loss_rot = 0.
+        if self.rescale_rot != 0.:
+            loss_rot = quaternion_distance(rot_err, target_rot, rot_err.device).mean()
+        total_loss = self.rescale_trans*loss_transl + self.rescale_rot*loss_rot
+        return total_loss
 
 
 def warp(x, flo):

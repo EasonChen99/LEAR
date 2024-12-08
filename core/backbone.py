@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from core.update import BasicUpdateBlock, DepthMaskHead
-from core.extractor import BasicEncoder_Event, BasicEncoder_LiDAR
+from core.extractor import BasicEncoder
 from core.corr import CorrBlock, AlternateCorrBlock
 from core.utils import coords_grid, upflow8, feature_visualizer
 from core.utils_point import invert_pose
@@ -46,9 +46,9 @@ class Backbone_Event(nn.Module):
             self.args.alternate_corr = False
 
         # feature network, context network, and update block
-        self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
-        self.fnet_lidar = BasicEncoder_LiDAR(output_dim=256, norm_fn='instance', dropout=args.dropout)
-        self.cnet = BasicEncoder_LiDAR(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
+        self.fnet_event = BasicEncoder(input_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
+        self.fnet_lidar = BasicEncoder(input_dim=1, output_dim=256, norm_fn='instance', dropout=args.dropout)
+        self.cnet = BasicEncoder(input_dim=1, output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
 
     def freeze_bn(self):
@@ -211,9 +211,9 @@ class Backbone_Reconstruction(nn.Module):
             self.args.alternate_corr = False
 
         # feature network, context network, and update block
-        self.fnet_lidar = BasicEncoder_LiDAR(output_dim=256, norm_fn='instance', dropout=args.dropout, return_all_layers=True)
-        self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
-        self.cnet = BasicEncoder_LiDAR(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
+        self.fnet_lidar = BasicEncoder(input_dim=1, output_dim=256, norm_fn='instance', dropout=args.dropout, return_all_layers=True)
+        self.fnet_event = BasicEncoder(input_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
+        self.cnet = BasicEncoder(input_dim=1, output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
         self.depth_mask_head = DepthMaskHead(input_dim=324, output_dim=2)
 
@@ -426,9 +426,9 @@ class Backbone_Transfer(nn.Module):
             self.args.alternate_corr = False
 
         # feature network, context network, and update block
-        self.fnet_lidar = BasicEncoder_LiDAR(output_dim=256, norm_fn='instance', dropout=args.dropout)
-        self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
-        self.cnet = BasicEncoder_LiDAR(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
+        self.fnet_lidar = BasicEncoder(input_dim=1, output_dim=256, norm_fn='instance', dropout=args.dropout)
+        self.fnet_event = BasicEncoder(input_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
+        self.cnet = BasicEncoder(input_dim=1, output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
 
     def freeze_bn(self):
@@ -680,9 +680,9 @@ class Backbone_Edge(nn.Module):
             self.edge_detector = EdgeDetector()
 
             # feature network, context network, and update block
-            self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
-            self.fnet_lidar = BasicEncoder_LiDAR(output_dim=256, norm_fn='instance', dropout=args.dropout)
-            self.cnet = BasicEncoder_LiDAR(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
+            self.fnet_event = BasicEncoder(input_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
+            self.fnet_lidar = BasicEncoder(input_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
+            self.cnet = BasicEncoder(input_dim=2, output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
             self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
 
     def freeze_bn(self):
@@ -760,8 +760,11 @@ class Backbone_Edge(nn.Module):
 
         # detector edge mask
         edge_mask = self.edge_detector(image1)
-        image1 = image1 * edge_mask
-        image1 = (image1 - torch.min(image1)) / (torch.max(image1) - torch.min(image1) + 1e-5)
+        # # # edge mask depth
+        # image1 = image1 * edge_mask
+        # image1 = (image1 - torch.min(image1)) / (torch.max(image1) - torch.min(image1) + 1e-5)
+        # # edge concat depth
+        image1 = torch.cat((image1, edge_mask), dim=1)
 
         image1 = 2 * image1 - 1.0
         image2 = 2 * image2 - 1.0
@@ -1138,9 +1141,9 @@ class Backbone_Fuse(nn.Module):
             self.depth_estimator = E2VID()
 
             # feature network, context network, and update block
-            self.fnet_lidar = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
-            self.fnet_event = BasicEncoder_Event(output_dim=256, norm_fn='instance', dropout=args.dropout)
-            self.cnet = BasicEncoder_Event(output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
+            self.fnet_lidar = BasicEncoder(input_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
+            self.fnet_event = BasicEncoder(input_dim=3, output_dim=256, norm_fn='instance', dropout=args.dropout)
+            self.cnet = BasicEncoder(input_dim=2, output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
             self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
 
     def freeze_bn(self):
@@ -1229,7 +1232,6 @@ class Backbone_Fuse(nn.Module):
         image1 = 2 * image1 - 1.0
         image1 = torch.cat((depth_to_edge, image1), dim=1)
         edge_to_depth = 2 * edge_to_depth - 1.0
-        image2 = ((image2[:, 0, ...] > 0) + (image2[:, 1, ...] > 0)).unsqueeze(1).float()
         image2 = 2 * image2 - 1.0
         image2 = torch.cat((image2, edge_to_depth), dim=1)
 

@@ -14,7 +14,7 @@ from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import warp, sequence_loss, ClassifyLoss, SigLoss
+from core.losses import warp, sequence_loss, ClassifyLoss, SigLoss, ProposedLoss
 from core.flow_viz import flow_to_image
 
 try:
@@ -146,11 +146,15 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
 
         logger.push(metrics)
 
-def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_threshold=3, cal_pose=False):
+def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_threshold=3, is_test=False):
     model.eval()
+
     out_list, epe_list = [], []
     Time = 0.
     outliers, err_r_list, err_t_list = [], [], []
+    pose_loss = []
+
+    pose_loss_fn = ProposedLoss(1., 1.)
     
     for i_batch, sample in enumerate(TestImgLoader):
         event_frame = sample['event_frame']
@@ -222,29 +226,32 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         epe_list.append(epe[val].mean().item())
         out_list.append(out[val].cpu().numpy())
 
-        if cal_pose:
-            R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=36, y=64, h=288, w=512)
-
-            Time += time.time() - end
-            if flag:
-                outliers.append(i_batch)
-                continue
-            else:
+        R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=36, y=64, h=288, w=512)
+        Time += time.time() - end
+        if flag:
+            outliers.append(i_batch)
+            continue
+        else:
+            pose_loss_i = pose_loss_fn(T_err, R_err, T_pred.unsqueeze(0), R_pred.unsqueeze(0))
+            pose_loss.append(pose_loss_i.item())
+            if is_test:
                 err_r, err_t = err_Pose(R_pred, T_pred, R_err[0], T_err[0])
                 err_r_list.append(err_r.item())
                 err_t_list.append(err_t.item())
-            print(f"{i_batch:05d}: {np.mean(err_t_list):.5f} {np.mean(err_r_list):.5f} {np.median(err_t_list):.5f} "
-                  f"{np.median(err_r_list):.5f} {len(outliers)} {Time / (i_batch+1):.5f}")
+                print(f"{i_batch:05d}: {np.mean(err_t_list):.5f} {np.mean(err_r_list):.5f} {np.median(err_t_list):.5f} "
+                        f"{np.median(err_r_list):.5f} {np.mean(pose_loss):.5f} {len(outliers)} {Time / (i_batch+1):.5f}")
               
     epe_list = np.array(epe_list)
     out_list = np.concatenate(out_list)
 
     epe = np.median(epe_list)
     f1 = 100 * np.mean(out_list)
-    if not cal_pose:
-        return epe, f1
+    pose_loss = np.mean(pose_loss)
+
+    if not is_test:
+        return epe, f1, pose_loss
     else:
-        return err_t_list, err_r_list, outliers, Time, epe, f1   
+        return err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss   
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -357,6 +364,19 @@ if __name__ == '__main__':
         model.load_state_dict(torch.load(args.load_checkpoints))
     model.to(device)
 
+    # # # freeze edge detector
+    # for param in model.module.edge_detector.parameters():
+    #     param.requires_grad = False
+    # # # freeze optical flow estimator
+    # for param in model.module.fnet_event.parameters():
+    #     param.requires_grad = False
+    # for param in model.module.fnet_lidar.parameters():
+    #     param.requires_grad = False
+    # for param in model.module.cnet.parameters():
+    #     param.requires_grad = False
+    # for param in model.module.update_block.parameters():
+    #     param.requires_grad = False
+
     ## reinitialize using fixed seed
     _init_fn(0, seed)
 
@@ -379,12 +399,12 @@ if __name__ == '__main__':
                                                 pin_memory=True)
     if args.evaluate:
         with torch.no_grad():
-            err_t_list, err_r_list, outliers, Time, epe, f1 = test(args, TestImgLoader, model, device, 
+            err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss = test(args, TestImgLoader, model, device, 
                                                                    occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold, 
-                                                                   cal_pose=True)
+                                                                   is_test=True)
             print(f"Mean trans error {np.mean(err_t_list):.5f}  Mean rotation error {np.mean(err_r_list):.5f}")
             print(f"Median trans error {np.median(err_t_list):.5f}  Median rotation error {np.median(err_r_list):.5f}")
-            print(f"epe {epe:.5f}  Mean {Time / len(TestImgLoader):.5f} per frame")
+            print(f"epe {epe:.5f} pose_loss {pose_loss:.5f} Mean {Time / len(TestImgLoader):.5f} per frame")
             print(f"Outliers number {len(outliers)}/{len(TestImgLoader)} {outliers}")
         sys.exit()
 
@@ -429,16 +449,16 @@ if __name__ == '__main__':
         torch.cuda.empty_cache()
 
         if epoch % args.evaluate_interval == 0:
-            epe, f1 = test(args, TestImgLoader, model, device, occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold)
-            print("Validation M3ED: %f, %f" % (epe, f1))
+            epe, f1, pose_loss = test(args, TestImgLoader, model, device, occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold)
+            print("Validation M3ED: %f, %f, %f" % (epe, f1, pose_loss))
 
-            results = {'m3ed-epe': epe, 'm3ed-f1': f1}
+            results = {'m3ed-epe': epe, 'm3ed-f1': f1, 'm3ed-poseloss': pose_loss}
             logger.write_dict(results)
 
             torch.save(model.state_dict(), f"./checkpoints/{args.backbone}/{datetime}/checkpoint.pth")
 
-            if epe < min_val_err:
-                min_val_err = epe
+            if pose_loss < min_val_err:
+                min_val_err = pose_loss
                 torch.save(model.state_dict(), f'./checkpoints/{args.backbone}/{datetime}/best_model.pth')
             
             torch.cuda.empty_cache()
