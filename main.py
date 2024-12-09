@@ -153,6 +153,8 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
     Time = 0.
     outliers, err_r_list, err_t_list = [], [], []
     pose_loss = []
+    success_rate = 0.
+    valid_rate = []
 
     pose_loss_fn = ProposedLoss(1., 1.)
     
@@ -226,6 +228,8 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         epe_list.append(epe[val].mean().item())
         out_list.append(out[val].cpu().numpy())
 
+        valid_rate.append(val.sum().item() / (depth_input > 0).sum().item())
+
         R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=36, y=64, h=288, w=512)
         Time += time.time() - end
         if flag:
@@ -238,8 +242,20 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
                 err_r, err_t = err_Pose(R_pred, T_pred, R_err[0], T_err[0])
                 err_r_list.append(err_r.item())
                 err_t_list.append(err_t.item())
-                print(f"{i_batch:05d}: {np.mean(err_t_list):.5f} {np.mean(err_r_list):.5f} {np.median(err_t_list):.5f} "
-                        f"{np.median(err_r_list):.5f} {np.mean(pose_loss):.5f} {len(outliers)} {Time / (i_batch+1):.5f}")
+                if err_r < 1. and err_t < 10.:
+                    success_rate += 1
+                print(f"{i_batch:05d}: {np.mean(err_t_list):.5f} {np.mean(err_r_list):.5f} | {np.median(err_t_list):.5f} "
+                        f"{np.median(err_r_list):.5f} | {np.mean(pose_loss):.5f} | {np.mean(valid_rate):.5f} | "
+                        f"{len(outliers)} | {Time / (i_batch+1):.5f}")
+                # # Define text properties
+                # org = (flow_viz.shape[1]-400, flow_viz.shape[0]-70)
+                # font = cv2.FONT_HERSHEY_SIMPLEX
+                # fontScale = 1
+                # color = (0, 0, 255)
+                # thickness = 2
+                # text = f"R={err_r.item():.3f} T={err_t.item():.3f}"
+                # cv2.putText(flow_viz, text, org, font, fontScale, color, thickness, cv2.LINE_AA)
+                # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
               
     epe_list = np.array(epe_list)
     out_list = np.concatenate(out_list)
@@ -251,7 +267,7 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
     if not is_test:
         return epe, f1, pose_loss
     else:
-        return err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss   
+        return err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss, success_rate   
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -399,12 +415,13 @@ if __name__ == '__main__':
                                                 pin_memory=True)
     if args.evaluate:
         with torch.no_grad():
-            err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss = test(args, TestImgLoader, model, device, 
+            err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss, success_rate = test(args, TestImgLoader, model, device, 
                                                                    occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold, 
                                                                    is_test=True)
             print(f"Mean trans error {np.mean(err_t_list):.5f}  Mean rotation error {np.mean(err_r_list):.5f}")
             print(f"Median trans error {np.median(err_t_list):.5f}  Median rotation error {np.median(err_r_list):.5f}")
             print(f"epe {epe:.5f} pose_loss {pose_loss:.5f} Mean {Time / len(TestImgLoader):.5f} per frame")
+            print(f"success rate {success_rate/len(TestImgLoader):.5f}")
             print(f"Outliers number {len(outliers)}/{len(TestImgLoader)} {outliers}")
         sys.exit()
 

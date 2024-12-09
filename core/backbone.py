@@ -1232,6 +1232,7 @@ class Backbone_Fuse(nn.Module):
         image1 = 2 * image1 - 1.0
         image1 = torch.cat((depth_to_edge, image1), dim=1)
         edge_to_depth = 2 * edge_to_depth - 1.0
+        # image2 = ((image2[:, 0, :, :]>0) + (image2[:, 1, :, :]>0)).float().unsqueeze(1)
         image2 = 2 * image2 - 1.0
         image2 = torch.cat((image2, edge_to_depth), dim=1)
 
