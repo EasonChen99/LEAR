@@ -639,11 +639,11 @@ class EdgeDetector(torch.nn.Module):
         tenInput = tenInput * 255.0
         # tenInput = tenInput - torch.tensor(data=[104.00698793, 116.66876762, 122.67891434], dtype=tenInput.dtype, device=tenInput.device).view(1, 3, 1, 1)
 
-        tenVggOne = self.netVggOne(tenInput)
-        tenVggTwo = self.netVggTwo(tenVggOne)
-        tenVggThr = self.netVggThr(tenVggTwo)
-        tenVggFou = self.netVggFou(tenVggThr)
-        tenVggFiv = self.netVggFiv(tenVggFou)
+        tenVggOne = self.netVggOne(tenInput)    # Bx64xHxW
+        tenVggTwo = self.netVggTwo(tenVggOne)   # Bx128xH/2xW/2
+        tenVggThr = self.netVggThr(tenVggTwo)   # Bx256xH/4xW/4
+        tenVggFou = self.netVggFou(tenVggThr)   # Bx512xH/8xW/8
+        tenVggFiv = self.netVggFiv(tenVggFou)   # Bx512xH/16xW/16
 
         tenScoreOne = self.netScoreOne(tenVggOne)
         tenScoreTwo = self.netScoreTwo(tenVggTwo)
@@ -760,9 +760,6 @@ class Backbone_Edge(nn.Module):
 
         # detector edge mask
         edge_mask = self.edge_detector(image1)
-        # # # edge mask depth
-        # image1 = image1 * edge_mask
-        # image1 = (image1 - torch.min(image1)) / (torch.max(image1) - torch.min(image1) + 1e-5)
         # # edge concat depth
         image1 = torch.cat((image1, edge_mask), dim=1)
 
