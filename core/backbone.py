@@ -636,7 +636,7 @@ class EdgeDetector(torch.nn.Module):
 
 
     def forward(self, tenInput):
-        tenInput = (tenInput + 1.0) / 2. * 255.0
+        tenInput = tenInput * 255.0
         # tenInput = tenInput - torch.tensor(data=[104.00698793, 116.66876762, 122.67891434], dtype=tenInput.dtype, device=tenInput.device).view(1, 3, 1, 1)
 
         tenVggOne = self.netVggOne(tenInput)
@@ -1232,7 +1232,6 @@ class Backbone_Fuse(nn.Module):
         image1 = 2 * image1 - 1.0
         image1 = torch.cat((depth_to_edge, image1), dim=1)
         edge_to_depth = 2 * edge_to_depth - 1.0
-        # image2 = ((image2[:, 0, :, :]>0) + (image2[:, 1, :, :]>0)).float().unsqueeze(1)
         image2 = 2 * image2 - 1.0
         image2 = torch.cat((image2, edge_to_depth), dim=1)
 
@@ -1240,7 +1239,7 @@ class Backbone_Fuse(nn.Module):
         with autocast(enabled=self.args.mixed_precision):
             fmap1 = self.fnet_lidar(image1)
             fmap2 = self.fnet_event(image2)
-
+            
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
 
