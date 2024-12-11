@@ -113,6 +113,7 @@ class BottleneckBlock(nn.Module):
 
         return self.relu(x + y)
 
+
 class BasicEncoder(nn.Module):
     def __init__(self, input_dim=1, output_dim=128, norm_fn='batch', dropout=0.0, return_all_layers=False):
         super(BasicEncoder, self).__init__()
@@ -172,13 +173,11 @@ class BasicEncoder(nn.Module):
             x = torch.cat(x, dim=0)
 
         One = self.conv1(x)  # 160 480 64
-
         One = self.norm1(One)
         One = self.relu1(One)
         Two = self.layer1(One)  # 160 480 64
         Three = self.layer2(Two)  # 80 240 96
         Four = self.layer3(Three)  # 40 120 128
-
         Five = self.conv2(Four)  # 40 120 128
 
         if self.training and self.dropout is not None:

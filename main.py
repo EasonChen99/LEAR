@@ -9,7 +9,7 @@ import random
 import torch
 
 from core.datasets_m3ed import DatasetM3ED as Dataset
-from core.backbone import Backbone_Event, Backbone_Fuse, Backbone_Edge
+from core.backbone import Backbone_Event, Backbone_Fuse, Backbone_Edge, Backbone_Edge_FF
 from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
@@ -353,6 +353,8 @@ if __name__ == '__main__':
     parser.add_argument('--backbone',
                         type=str,
                         default='baseline')
+    parser.add_argument('--use_feature_fusion', 
+                        action='store_true')
     args = parser.parse_args()    
     
     ## set key parameters
@@ -372,7 +374,10 @@ if __name__ == '__main__':
     elif args.backbone == "fuse":
         model = torch.nn.DataParallel(Backbone_Fuse(args), device_ids=args.gpus)
     elif args.backbone == "edge":
-        model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)
+        if args.use_feature_fusion:
+            model = torch.nn.DataParallel(Backbone_Edge_FF(args), device_ids=args.gpus)
+        else:
+            model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)
     else:
         raise "Specified backbone doesn't exist"
     print("Parameter Count: %d" % count_parameters(model))
