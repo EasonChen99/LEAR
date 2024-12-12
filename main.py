@@ -146,6 +146,33 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
 
         logger.push(metrics)
 
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+def visualize_depth_distribution(depth_map, i_batch):
+    # Flatten the depth map to get all pixel values as a 1D array
+    pixel_values = depth_map.flatten()
+    pixel_values = pixel_values[pixel_values>0]
+
+    # pixel_values = pixel_values * 2 - 1.
+    # pixel_values = (pixel_values + 1.) / 2.
+
+    # Plot the histogram
+    plt.figure(figsize=(10, 6))
+    plt.hist(pixel_values, bins=50, color='blue', alpha=0.7, edgecolor='black')  # 50 bins
+    plt.title("Pixel Value Distribution in Depth Map", fontsize=16)
+    plt.xlabel("Depth Value", fontsize=14)
+    plt.ylabel("Frequency", fontsize=14)
+    plt.grid(alpha=0.3)
+
+    # save the plot
+    plt.savefig(f"./visualization/distribution/after/{i_batch:05d}.png")
+
+    return 0
+
+
+
 def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_threshold=3, is_test=False):
     model.eval()
 
@@ -229,6 +256,8 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         out_list.append(out[val].cpu().numpy())
 
         valid_rate.append(val.sum().item() / (depth_input > 0).sum().item())
+
+        visualize_depth_distribution(depth_input[0, 0, ...].cpu().detach().numpy(), i_batch)
 
         R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=36, y=64, h=288, w=512)
         Time += time.time() - end
