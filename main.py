@@ -121,15 +121,17 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
             theta = 100
             loss = alpha * loss_flow + beta * loss_edge + theta * loss_depth
         elif args.backbone == "edge":
-            flow_preds, depth2edge = model(depth_input, event_input, iters=args.iters)
+            # flow_preds, depth2edge = model(depth_input, event_input, iters=args.iters)
+            flow_preds, depth2edge_preds = model(depth_input, event_input, iters=args.iters)
             ## flow loss
             loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
             flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
             cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
-            depth2edge_bi = torch.cat((1.-depth2edge, depth2edge), dim=1)
-            loss_edge = ClassifyLoss(depth2edge_bi, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
+            # loss_edge = ClassifyLoss(depth2edge, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
+            loss_edge = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
             metrics['edge_loss'] = loss_edge.item()
-            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            # cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge_preds[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
             alpha = 1
             beta = 100
             loss = alpha * loss_flow + beta * loss_edge
@@ -201,6 +203,11 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
         flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
         cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+        warp_vis_event_time_image = warp(event_input, flow_up)
+        warp_vis_event_time_image = warp_vis_event_time_image[0,...].permute(1, 2, 0).cpu().numpy()
+        warp_vis_event_time_image = np.concatenate((np.zeros([warp_vis_event_time_image.shape[0], warp_vis_event_time_image.shape[1], 1]), warp_vis_event_time_image), axis=2)
+        warp_vis_event_time_image = warp_vis_event_time_image[:, :, [2, 0, 1]]
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_4_1_warp_event_input.png", (warp_vis_event_time_image / np.max(warp_vis_event_time_image) * 255).astype(np.uint8))
         if args.backbone == "fuse":
             vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
             cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
@@ -354,9 +361,7 @@ if __name__ == '__main__':
     parser.add_argument('--backbone',
                         type=str,
                         default='baseline')
-    parser.add_argument('--depth_fusion', 
-                        action='store_true')
-    parser.add_argument('--event_fusion', 
+    parser.add_argument('--use_feature_fusion', 
                         action='store_true')
     args = parser.parse_args()    
     
@@ -377,7 +382,7 @@ if __name__ == '__main__':
     elif args.backbone == "fuse":
         model = torch.nn.DataParallel(Backbone_Fuse(args), device_ids=args.gpus)
     elif args.backbone == "edge":
-        if args.depth_fusion:
+        if args.use_feature_fusion:
             model = torch.nn.DataParallel(Backbone_Edge_FF(args), device_ids=args.gpus)
         else:
             model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)

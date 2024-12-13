@@ -193,17 +193,20 @@ def ClassifyLoss(depth_mask, ground_truth, flow=None, mask=None, loss_func="Cros
     if loss_func == "Cross_Entropy_Loss":
         # cross-entropy loss
         criterion = nn.CrossEntropyLoss()
+        depth_mask = torch.cat((1.-depth_mask, depth_mask), dim=1)
         loss = criterion(depth_mask, ground_truth)
     elif loss_func == "Focal_Loss":
         # focal loss
         alpha=0.25
         gamma=2.0
         criterion = nn.CrossEntropyLoss(reduction='none')
+        depth_mask = torch.cat((1.-depth_mask, depth_mask), dim=1)
         ce_loss = criterion(depth_mask, ground_truth)
         pt = torch.exp(-ce_loss)
         loss = (alpha * (1 - pt) ** gamma * ce_loss).mean()
     elif loss_func == "Weighted_Cross_Entropy_Loss":
         # weighted cross-entropy loss
+        depth_mask = torch.cat((1.-depth_mask, depth_mask), dim=1)
         count_neg = (ground_truth == 0).sum()
         count_pos = (ground_truth == 1).sum()
         beta = count_neg / (count_neg + count_pos)
@@ -211,57 +214,23 @@ def ClassifyLoss(depth_mask, ground_truth, flow=None, mask=None, loss_func="Cros
         weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
         criterion = nn.CrossEntropyLoss(weight=weights)
         loss = criterion(depth_mask, ground_truth)
-    elif loss_func == "Masked_Weighted_Cross_Entropy_Loss":
-        # masked weighted cross-entropy loss
-        count_neg = (ground_truth[mask[:, 0, ...]] == 0).sum()
-        count_pos = (ground_truth[mask[:, 0, ...]] == 1).sum()
-        beta = count_neg / (count_neg + count_pos)
-        pos_weight = beta / (1 - beta)
-        weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
-        criterion = nn.CrossEntropyLoss(weight=weights)
-        loss = criterion(depth_mask[mask.repeat(1, 2, 1, 1)].view(1, 2, -1), ground_truth[mask[:, 0, ...]].view(1, -1))
-    elif loss_func == "Warped_Weighted_Cross_Entropy_Loss":
-         # warped weighted cross-entropy loss
-        if flow == None:
-            raise "Flow doesn't exist"
+    elif loss_func == "Sequence_Weighted_Cross_Entropy_Loss":
+        # weighted cross-entropy loss for a sequence of predictions
         count_neg = (ground_truth == 0).sum()
         count_pos = (ground_truth == 1).sum()
         beta = count_neg / (count_neg + count_pos)
         pos_weight = beta / (1 - beta)
         weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
         criterion = nn.CrossEntropyLoss(weight=weights)
-        depth_mask_warp = warp(depth_mask, flow)
-        loss = criterion(depth_mask_warp, ground_truth)
-    elif loss_func == "Inverse_Warped_Weighted_Cross_Entropy_Loss":
-         # warped weighted cross-entropy loss
-        if flow == None:
-            raise "Flow doesn't exist"
-        ground_truth_warp = warp(ground_truth, flow)
-        ground_truth_warp = ground_truth_warp > 0
-        ground_truth = ground_truth_warp[:, 0, ...].long()
-        count_neg = (ground_truth == 0).sum()
-        count_pos = (ground_truth == 1).sum()
-        beta = count_neg / (count_neg + count_pos)
-        pos_weight = beta / (1 - beta)
-        weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
-        criterion = nn.CrossEntropyLoss(weight=weights)
-        loss = criterion(depth_mask, ground_truth)  
-    elif loss_func == "Masked_Inverse_Warped_Weighted_Cross_Entropy_Loss":
-         # masked inversed warped weighted cross-entropy loss
-        if flow == None:
-            raise "Flow doesn't exist"
-        if mask == None:
-            raise "Mask doesn't exist"
-        ground_truth_warp = warp(ground_truth, flow)
-        ground_truth_warp = ground_truth_warp > 0
-        ground_truth = ground_truth_warp[:, 0, ...].long()
-        count_neg = (ground_truth[mask[:, 0, ...]] == 0).sum()
-        count_pos = (ground_truth[mask[:, 0, ...]] == 1).sum()
-        beta = count_neg / (count_neg + count_pos)
-        pos_weight = beta / (1 - beta)
-        weights = torch.tensor([beta, pos_weight], device=ground_truth.device)
-        criterion = nn.CrossEntropyLoss(weight=weights)
-        loss = criterion(depth_mask[mask.repeat(1, 2, 1, 1)].view(1, 2, -1), ground_truth[mask[:, 0, ...]].view(1, -1))   
+        n_predictions = len(depth_mask)
+        gamma=0.8
+        loss = 0.0
+        for i in range(n_predictions):
+            i_weight = gamma ** (n_predictions - i - 1)
+            depth_mask_sub = depth_mask[i]
+            depth_mask_sub = torch.cat((1.-depth_mask_sub, depth_mask_sub), dim=1)
+            loss_i = criterion(depth_mask_sub, ground_truth)
+            loss += i_weight * loss_i
     else:
         raise "Loss Function doesn't exist"
     return loss
