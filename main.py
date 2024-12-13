@@ -354,7 +354,9 @@ if __name__ == '__main__':
     parser.add_argument('--backbone',
                         type=str,
                         default='baseline')
-    parser.add_argument('--use_feature_fusion', 
+    parser.add_argument('--depth_fusion', 
+                        action='store_true')
+    parser.add_argument('--event_fusion', 
                         action='store_true')
     args = parser.parse_args()    
     
@@ -375,7 +377,7 @@ if __name__ == '__main__':
     elif args.backbone == "fuse":
         model = torch.nn.DataParallel(Backbone_Fuse(args), device_ids=args.gpus)
     elif args.backbone == "edge":
-        if args.use_feature_fusion:
+        if args.depth_fusion:
             model = torch.nn.DataParallel(Backbone_Edge_FF(args), device_ids=args.gpus)
         else:
             model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)
