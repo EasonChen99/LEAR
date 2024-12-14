@@ -30,7 +30,7 @@ except:
         def unscale_(self, optimizer):
             pass
 
-        def step(self, optimizer):
+        def step(self, optimizer): 
             optimizer.step()
 
         def update(self):

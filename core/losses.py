@@ -231,6 +231,7 @@ def ClassifyLoss(depth_mask, ground_truth, flow=None, mask=None, loss_func="Cros
             depth_mask_sub = torch.cat((1.-depth_mask_sub, depth_mask_sub), dim=1)
             loss_i = criterion(depth_mask_sub, ground_truth)
             loss += i_weight * loss_i
+        return loss, loss_i
     else:
         raise "Loss Function doesn't exist"
     return loss
