@@ -128,8 +128,9 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
             flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
             cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
             # loss_edge = ClassifyLoss(depth2edge, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
-            loss_edge = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
-            metrics['edge_loss'] = loss_edge.item()
+            loss_edge, loss_edge_last = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
+            # metrics['edge_loss'] = loss_edge.item()
+            metrics['edge_loss'] = loss_edge_last.item()
             # cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
             cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge_preds[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
             alpha = 1
@@ -204,7 +205,7 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
         cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
         warp_vis_event_time_image = warp(event_input, flow_up)
-        warp_vis_event_time_image = warp_vis_event_time_image[0,...].permute(1, 2, 0).cpu().numpy()
+        warp_vis_event_time_image = warp_vis_event_time_image[0,...].permute(1, 2, 0).cpu().detach().numpy()
         warp_vis_event_time_image = np.concatenate((np.zeros([warp_vis_event_time_image.shape[0], warp_vis_event_time_image.shape[1], 1]), warp_vis_event_time_image), axis=2)
         warp_vis_event_time_image = warp_vis_event_time_image[:, :, [2, 0, 1]]
         cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_4_1_warp_event_input.png", (warp_vis_event_time_image / np.max(warp_vis_event_time_image) * 255).astype(np.uint8))
