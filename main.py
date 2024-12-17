@@ -283,7 +283,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',
                         type=str,
                         metavar='DIR',
-                        default='/media/eason/Backup/Datasets/M3ED/generated/Falcon',
+                        default='/home/zhang/cky_EVLoc/dataset/M3ED/Falcon',
                         help='path to dataset')
     parser.add_argument('--ev_input', 
                         '--event_representation',

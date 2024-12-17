@@ -476,11 +476,11 @@ class Basic_Encoder_Edge_Fusion(nn.Module):
         self.fusion_depth3 = nn.Conv2d(640, 128, kernel_size=1)
         self.fusion_edge3 = nn.Conv2d(640, 512, kernel_size=1)
         # # feature fusion with flow
-        self.fusion_flow_depth1 = nn.Conv2d(256, 64, kernel_size=1)
+        # self.fusion_flow_depth1 = nn.Conv2d(256, 64, kernel_size=1)
         self.fusion_flow_edge1 = nn.Conv2d(256, 128, kernel_size=1)
-        self.fusion_flow_depth2 = nn.Conv2d(448, 96, kernel_size=1)
+        # self.fusion_flow_depth2 = nn.Conv2d(448, 96, kernel_size=1)
         self.fusion_flow_edge2 = nn.Conv2d(448, 256, kernel_size=1)
-        self.fusion_flow_depth3 = nn.Conv2d(768, 128, kernel_size=1)
+        # self.fusion_flow_depth3 = nn.Conv2d(768, 128, kernel_size=1)
         self.fusion_flow_edge3 = nn.Conv2d(768, 512, kernel_size=1)   
 
 
@@ -521,46 +521,43 @@ class Basic_Encoder_Edge_Fusion(nn.Module):
         depth_feature_2 = self.depth_layer2(depth_feature_1)
         edge_feature_2 = self.edge_layer2(edge_feature_1)
         event_feature_2 = self.event_layer2(event_feature_1)
-        if flow is None:
-            fusion_feature_1 = torch.cat((depth_feature_2, edge_feature_2), dim=1)
-            depth_feature_2 = self.fusion_depth1(fusion_feature_1)
-            edge_feature_2 = self.fusion_edge1(fusion_feature_1)
-        else:
+        fusion_feature_1 = torch.cat((depth_feature_2, edge_feature_2), dim=1)
+        depth_feature_2 = self.fusion_depth1(fusion_feature_1)
+        edge_feature_2 = self.fusion_edge1(fusion_feature_1)
+        if flow is not None:
             flow = downsample_flow(flow, 0.5)
             warp_event_feature_2 = warp(event_feature_2, flow)
             fusion_feature_1 = torch.cat((depth_feature_2, edge_feature_2, warp_event_feature_2), dim=1)
-            depth_feature_2 = self.fusion_flow_depth1(fusion_feature_1)
-            edge_feature_2 = self.fusion_flow_edge1(fusion_feature_1)            
+            # depth_feature_2 = self.fusion_flow_depth1(fusion_feature_1)
+            edge_flow_feature_2 = self.fusion_flow_edge1(fusion_feature_1) 
             
         # layer3
         depth_feature_3 = self.depth_layer3(depth_feature_2)
         edge_feature_3 = self.edge_layer3(edge_feature_2)
         event_feature_3 = self.event_layer3(event_feature_2)
-        if flow is None:
-            fusion_feature_2 = torch.cat((depth_feature_3, edge_feature_3), dim=1)
-            depth_feature_3 = self.fusion_depth2(fusion_feature_2)
-            edge_feature_3 = self.fusion_edge2(fusion_feature_2)      
-        else:
+        fusion_feature_2 = torch.cat((depth_feature_3, edge_feature_3), dim=1)
+        depth_feature_3 = self.fusion_depth2(fusion_feature_2)
+        edge_feature_3 = self.fusion_edge2(fusion_feature_2)      
+        if flow is not None:
             flow = downsample_flow(flow, 0.5)
             warp_event_feature_3 = warp(event_feature_3, flow)
             fusion_feature_2 = torch.cat((depth_feature_3, edge_feature_3, warp_event_feature_3), dim=1)
-            depth_feature_3 = self.fusion_flow_depth2(fusion_feature_2)
-            edge_feature_3 = self.fusion_flow_edge2(fusion_feature_2)            
+            # depth_feature_3 = self.fusion_flow_depth2(fusion_feature_2)
+            edge_flow_feature_3 = self.fusion_flow_edge2(fusion_feature_2)            
 
         # layer4
         depth_feature_4 = self.depth_layer4(depth_feature_3)
         edge_feature_4 = self.edge_layer4(edge_feature_3)
         event_feature_4 = self.event_layer4(event_feature_3)
-        if flow is None:
-            fusion_feature_3 = torch.cat((depth_feature_4, edge_feature_4), dim=1)
-            depth_feature_4 = self.fusion_depth3(fusion_feature_3)
-            edge_feature_4 = self.fusion_edge3(fusion_feature_3)
-        else:
+        fusion_feature_3 = torch.cat((depth_feature_4, edge_feature_4), dim=1)
+        depth_feature_4 = self.fusion_depth3(fusion_feature_3)
+        edge_feature_4 = self.fusion_edge3(fusion_feature_3)
+        if flow is not None:
             flow = downsample_flow(flow, 0.5)
             warp_event_feature_4 = warp(event_feature_4, flow)   
             fusion_feature_3 = torch.cat((depth_feature_4, edge_feature_4, warp_event_feature_4), dim=1)
-            depth_feature_4 = self.fusion_flow_depth3(fusion_feature_3)
-            edge_feature_4 = self.fusion_flow_edge3(fusion_feature_3)
+            # depth_feature_4 = self.fusion_flow_depth3(fusion_feature_3)
+            edge_flow_feature_4 = self.fusion_flow_edge3(fusion_feature_3)
 
         # layer5
         depth_feature_5 = self.depth_layer5(depth_feature_4)
@@ -578,7 +575,7 @@ class Basic_Encoder_Edge_Fusion(nn.Module):
         if flow is None:
             return depth_feature_5, event_feature_5
         else:
-            return [depth, edge_feature_1,edge_feature_2,edge_feature_3,edge_feature_4,edge_feature_5]
+            return [depth, edge_feature_1,edge_flow_feature_2,edge_flow_feature_3,edge_flow_feature_4,edge_feature_5]
 
 class Decoder_Edge(nn.Module):
     def __init__(self):

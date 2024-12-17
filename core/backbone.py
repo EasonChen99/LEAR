@@ -1000,8 +1000,6 @@ class Backbone_Edge_FF(nn.Module):
             self.args.alternate_corr = False
 
         # feature network, context network, and update block
-        # self.fnet_lidar = Encoder_Edge_Fusion(input_dim=1, output_dim=256, norm_fn='instance', dropout=args.dropout)
-        # self.fnet_event = BasicEncoder(input_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
         self.fnet = Basic_Encoder_Edge_Fusion(input_1_dim=1, input_2_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
         self.cnet = BasicEncoder(input_dim=1, output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
@@ -1129,17 +1127,24 @@ class Backbone_Edge_FF(nn.Module):
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
             
-            # edge detection
-            edge_feature_list = self.fnet(image1, image2, flow_up)
-            edge_mask = self.edge_detector(edge_feature_list)
-
             flow_predictions.append(flow_up)
-            edge_mask_predictions.append(edge_mask)
+
+        # edge detection
+        edge_feature_list = self.fnet(image1, image2, flow_up)
+        edge_mask = self.edge_detector(edge_feature_list)
+        edge_mask_predictions.append(edge_mask)
 
         if test_mode:
             return coords1 - coords0, flow_up, edge_mask
             
         return flow_predictions, edge_mask_predictions
+
+
+
+
+
+
+
 
 
 
