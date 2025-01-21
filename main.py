@@ -220,7 +220,10 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         if args.backbone == "edge":
             ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
             cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            # for i in range(len(depth2edge)):
+            #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{i:02d}.png', (depth2edge[i][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+
 
         epe = torch.sum((flow_up - flow_gt) ** 2, dim=1).sqrt()
         mag = torch.sum(flow_gt ** 2, dim=1).sqrt()
@@ -283,7 +286,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',
                         type=str,
                         metavar='DIR',
-                        default='/home/zhang/cky_EVLoc/dataset/M3ED/Falcon',
+                        default='/media/eason/Backup/Datasets/M3ED/generated/Falcon',
                         help='path to dataset')
     parser.add_argument('--ev_input', 
                         '--event_representation',

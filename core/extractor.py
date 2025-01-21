@@ -329,254 +329,6 @@ class Encoder_Edge_Fusion(nn.Module):
 
 
 
-
-
-
-
-def downsample_flow(flow, scale_factor):
-    """
-    Downsamples an optical flow field.
-    
-    Args:
-        flow: Tensor of shape [B, 2, H, W] representing the optical flow.
-        scale_factor: Factor by which to downsample (e.g., 0.5 for halving resolution).
-        
-    Returns:
-        Downsampled flow tensor.
-    """
-    downsampled_flow = F.interpolate(flow, scale_factor=scale_factor, mode='bilinear', align_corners=True)
-    
-    downsampled_flow[:, 0, :, :] *= scale_factor
-    downsampled_flow[:, 1, :, :] *= scale_factor
-    
-    return downsampled_flow
-
-def warp(x, flo):
-    """
-    warp an image/tensor (im2) back to im1, according to the optical flow
-
-    x: [B, C, H, W] (im2)
-    flo: [B, 2, H, W] flow
-
-    """
-    B, C, H, W = x.size()
-    # mesh grid 
-    xx = torch.arange(0, W).view(1,-1).repeat(H,1)
-    yy = torch.arange(0, H).view(-1,1).repeat(1,W)
-    xx = xx.view(1,1,H,W).repeat(B,1,1,1)
-    yy = yy.view(1,1,H,W).repeat(B,1,1,1)
-    grid = torch.cat((xx,yy),1).float()
-
-    if x.is_cuda:
-        grid = grid.cuda()
-    vgrid = Variable(grid) + flo
-
-    # scale grid to [-1,1] 
-    vgrid[:,0,:,:] = 2.0*vgrid[:,0,:,:].clone() / max(W-1,1)-1.0
-    vgrid[:,1,:,:] = 2.0*vgrid[:,1,:,:].clone() / max(H-1,1)-1.0
-
-    vgrid = vgrid.permute(0,2,3,1)        
-    output = nn.functional.grid_sample(x, vgrid)
-    mask = torch.autograd.Variable(torch.ones(x.size())).cuda()
-    mask = nn.functional.grid_sample(mask, vgrid)
-
-    mask[mask<0.9999] = 0
-    mask[mask>0] = 1
-    
-    return output*mask
-
-class Basic_Encoder_Edge_Fusion(nn.Module):
-    def __init__(self, input_1_dim=1, input_2_dim=2, output_dim=128, norm_fn='batch', dropout=0.0):
-        super(Basic_Encoder_Edge_Fusion, self).__init__()
-        self.norm_fn = norm_fn
-        if self.norm_fn == 'group':
-            self.norm1 = nn.GroupNorm(num_groups=8, num_channels=64)
-            self.norm2 = nn.GroupNorm(num_groups=8, num_channels=64)
-        elif self.norm_fn == 'batch':
-            self.norm1 = nn.BatchNorm2d(64)
-            self.norm2 = nn.BatchNorm2d(64)
-        elif self.norm_fn == 'instance':
-            self.norm1 = nn.InstanceNorm2d(64)
-            self.norm2 = nn.InstanceNorm2d(64)
-        elif self.norm_fn == 'none':
-            self.norm1 = nn.Sequential()
-            self.norm2 = nn.Sequential()
-
-        # depth encoder
-        self.depth_layer1 = nn.Conv2d(input_1_dim, 64, kernel_size=7, stride=2, padding=3)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.in_planes = 64
-        self.depth_layer2 = self._make_layer(64, stride=1)
-        self.depth_layer3 = self._make_layer(96, stride=2)
-        self.depth_layer4 = self._make_layer(128, stride=2)
-        self.depth_layer5 = nn.Conv2d(128, output_dim, kernel_size=1)
-        self.dropout = None
-        if dropout > 0:
-            self.dropout1 = nn.Dropout2d(p=dropout)
-        
-        # event encoder
-        self.event_layer1 = nn.Conv2d(input_2_dim, 64, kernel_size=7, stride=2, padding=3)
-        self.relu2 = nn.ReLU(inplace=True)
-        self.in_planes = 64
-        self.event_layer2 = self._make_layer(64, stride=1)
-        self.event_layer3 = self._make_layer(96, stride=2)
-        self.event_layer4 = self._make_layer(128, stride=2)
-        self.event_layer5 = nn.Conv2d(128, output_dim, kernel_size=1)
-        self.dropout = None
-        if dropout > 0:
-            self.dropout2 = nn.Dropout2d(p=dropout)        
-        
-        # edge encoder
-        self.edge_layer1 = torch.nn.Sequential(
-            torch.nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False),
-            torch.nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False)
-        )
-        self.edge_layer2 = torch.nn.Sequential(
-            torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            torch.nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False),
-            torch.nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False)
-        )
-        self.edge_layer3 = torch.nn.Sequential(
-            torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            torch.nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False),
-            torch.nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False),
-            torch.nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False)
-        )
-        self.edge_layer4 = torch.nn.Sequential(
-            torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            torch.nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False),
-            torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False),
-            torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False)
-        )
-        self.edge_layer5 = torch.nn.Sequential(
-            torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False),
-            torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False),
-            torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
-            torch.nn.ReLU(inplace=False)
-        )
-
-        # # feature fusion module
-        self.fusion_depth1 = nn.Conv2d(192, 64, kernel_size=1)
-        self.fusion_edge1 = nn.Conv2d(192, 128, kernel_size=1)
-        self.fusion_depth2 = nn.Conv2d(352, 96, kernel_size=1)
-        self.fusion_edge2 = nn.Conv2d(352, 256, kernel_size=1)       
-        self.fusion_depth3 = nn.Conv2d(640, 128, kernel_size=1)
-        self.fusion_edge3 = nn.Conv2d(640, 512, kernel_size=1)
-        # # feature fusion with flow
-        # self.fusion_flow_depth1 = nn.Conv2d(256, 64, kernel_size=1)
-        self.fusion_flow_edge1 = nn.Conv2d(256, 128, kernel_size=1)
-        # self.fusion_flow_depth2 = nn.Conv2d(448, 96, kernel_size=1)
-        self.fusion_flow_edge2 = nn.Conv2d(448, 256, kernel_size=1)
-        # self.fusion_flow_depth3 = nn.Conv2d(768, 128, kernel_size=1)
-        self.fusion_flow_edge3 = nn.Conv2d(768, 512, kernel_size=1)   
-
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, (nn.BatchNorm2d, nn.InstanceNorm2d, nn.GroupNorm)):
-                if m.weight is not None:
-                    nn.init.constant_(m.weight, 1)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-    def _make_layer(self, dim, stride=1):
-        layer1 = ResidualBlock(self.in_planes, dim, self.norm_fn, stride=stride)
-        layer2 = ResidualBlock(dim, dim, self.norm_fn, stride=1)
-        layers = (layer1, layer2)
-
-        self.in_planes = dim
-        return nn.Sequential(*layers)
-
-    def forward(self, depth, event, flow=None):
-        is_list_depth = isinstance(depth, tuple) or isinstance(depth, list)
-        if is_list_depth:
-            batch_dim = depth[0].shape[0]
-            depth = torch.cat(depth, dim=0)
-        is_list_event = isinstance(event, tuple) or isinstance(event, list)
-        if is_list_event:
-            batch_dim = event[0].shape[0]
-            event = torch.cat(event, dim=0)
-
-        # layer1
-        depth_feature_1 = self.relu1(self.norm1(self.depth_layer1(depth)))
-        depth = (depth + 1.) / 2. * 255.
-        edge_feature_1 = self.edge_layer1(depth)
-        event_feature_1 = self.relu2(self.norm2(self.event_layer1(event)))
-
-        # layer2
-        depth_feature_2 = self.depth_layer2(depth_feature_1)
-        edge_feature_2 = self.edge_layer2(edge_feature_1)
-        event_feature_2 = self.event_layer2(event_feature_1)
-        fusion_feature_1 = torch.cat((depth_feature_2, edge_feature_2), dim=1)
-        depth_feature_2 = self.fusion_depth1(fusion_feature_1)
-        edge_feature_2 = self.fusion_edge1(fusion_feature_1)
-        if flow is not None:
-            flow = downsample_flow(flow, 0.5)
-            warp_event_feature_2 = warp(event_feature_2, flow)
-            fusion_feature_1 = torch.cat((depth_feature_2, edge_feature_2, warp_event_feature_2), dim=1)
-            # depth_feature_2 = self.fusion_flow_depth1(fusion_feature_1)
-            edge_flow_feature_2 = self.fusion_flow_edge1(fusion_feature_1) 
-            
-        # layer3
-        depth_feature_3 = self.depth_layer3(depth_feature_2)
-        edge_feature_3 = self.edge_layer3(edge_feature_2)
-        event_feature_3 = self.event_layer3(event_feature_2)
-        fusion_feature_2 = torch.cat((depth_feature_3, edge_feature_3), dim=1)
-        depth_feature_3 = self.fusion_depth2(fusion_feature_2)
-        edge_feature_3 = self.fusion_edge2(fusion_feature_2)      
-        if flow is not None:
-            flow = downsample_flow(flow, 0.5)
-            warp_event_feature_3 = warp(event_feature_3, flow)
-            fusion_feature_2 = torch.cat((depth_feature_3, edge_feature_3, warp_event_feature_3), dim=1)
-            # depth_feature_3 = self.fusion_flow_depth2(fusion_feature_2)
-            edge_flow_feature_3 = self.fusion_flow_edge2(fusion_feature_2)            
-
-        # layer4
-        depth_feature_4 = self.depth_layer4(depth_feature_3)
-        edge_feature_4 = self.edge_layer4(edge_feature_3)
-        event_feature_4 = self.event_layer4(event_feature_3)
-        fusion_feature_3 = torch.cat((depth_feature_4, edge_feature_4), dim=1)
-        depth_feature_4 = self.fusion_depth3(fusion_feature_3)
-        edge_feature_4 = self.fusion_edge3(fusion_feature_3)
-        if flow is not None:
-            flow = downsample_flow(flow, 0.5)
-            warp_event_feature_4 = warp(event_feature_4, flow)   
-            fusion_feature_3 = torch.cat((depth_feature_4, edge_feature_4, warp_event_feature_4), dim=1)
-            # depth_feature_4 = self.fusion_flow_depth3(fusion_feature_3)
-            edge_flow_feature_4 = self.fusion_flow_edge3(fusion_feature_3)
-
-        # layer5
-        depth_feature_5 = self.depth_layer5(depth_feature_4)
-        edge_feature_5 = self.edge_layer5(edge_feature_4)
-        event_feature_5 = self.event_layer5(event_feature_4)
-
-        if self.training and self.dropout is not None:
-            depth_feature_5 = self.dropout1(depth_feature_5)
-            event_feature_5 = self.dropout2(event_feature_5)
-        if is_list_depth:
-            depth_feature_5 = torch.split(depth_feature_5, [batch_dim, batch_dim], dim=0)
-        if is_list_event:
-            event_feature_5 = torch.split(event_feature_5, [batch_dim, batch_dim], dim=0)
-
-        if flow is None:
-            return depth_feature_5, event_feature_5
-        else:
-            return [depth, edge_feature_1,edge_flow_feature_2,edge_flow_feature_3,edge_flow_feature_4,edge_feature_5]
-
 class Decoder_Edge(nn.Module):
     def __init__(self):
         super(Decoder_Edge, self).__init__()
@@ -608,6 +360,179 @@ class Decoder_Edge(nn.Module):
         tenScoreFiv = torch.nn.functional.interpolate(input=tenScoreFiv, size=(tenInput.shape[2], tenInput.shape[3]), mode='bilinear', align_corners=False)
 
         return self.netCombine(torch.cat([ tenScoreOne, tenScoreTwo, tenScoreThr, tenScoreFou, tenScoreFiv ], 1))
+    
+
+
+
+
+    
+# class Basic_Encoder_Edge_Fusion(nn.Module):
+#     def __init__(self, input_1_dim=1, input_2_dim=2, output_dim=128, norm_fn='batch', dropout=0.0):
+#         super(Basic_Encoder_Edge_Fusion, self).__init__()
+#         self.norm_fn = norm_fn
+#         if self.norm_fn == 'group':
+#             self.norm1 = nn.GroupNorm(num_groups=8, num_channels=64)
+#             self.norm2 = nn.GroupNorm(num_groups=8, num_channels=64)
+#         elif self.norm_fn == 'batch':
+#             self.norm1 = nn.BatchNorm2d(64)
+#             self.norm2 = nn.BatchNorm2d(64)
+#         elif self.norm_fn == 'instance':
+#             self.norm1 = nn.InstanceNorm2d(64)
+#             self.norm2 = nn.InstanceNorm2d(64)
+#         elif self.norm_fn == 'none':
+#             self.norm1 = nn.Sequential()
+#             self.norm2 = nn.Sequential()
+
+#         # depth encoder
+#         self.depth_layer1 = nn.Conv2d(input_1_dim, 64, kernel_size=7, stride=2, padding=3)
+#         self.relu1 = nn.ReLU(inplace=True)
+#         self.in_planes = 64
+#         self.depth_layer2 = self._make_layer(64, stride=1)
+#         self.depth_layer3 = self._make_layer(96, stride=2)
+#         self.depth_layer4 = self._make_layer(128, stride=2)
+#         self.depth_layer5 = nn.Conv2d(128, output_dim, kernel_size=1)
+#         self.dropout = None
+#         if dropout > 0:
+#             self.dropout1 = nn.Dropout2d(p=dropout)
+        
+#         # event encoder
+#         self.event_layer1 = nn.Conv2d(input_2_dim, 64, kernel_size=7, stride=2, padding=3)
+#         self.relu2 = nn.ReLU(inplace=True)
+#         self.in_planes = 64
+#         self.event_layer2 = self._make_layer(64, stride=1)
+#         self.event_layer3 = self._make_layer(96, stride=2)
+#         self.event_layer4 = self._make_layer(128, stride=2)
+#         self.event_layer5 = nn.Conv2d(128, output_dim, kernel_size=1)
+#         self.dropout = None
+#         if dropout > 0:
+#             self.dropout2 = nn.Dropout2d(p=dropout)        
+        
+#         # edge encoder
+#         self.edge_layer1 = torch.nn.Sequential(
+#             torch.nn.Conv2d(in_channels=1, out_channels=64, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False),
+#             torch.nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False)
+#         )
+#         self.edge_layer2 = torch.nn.Sequential(
+#             torch.nn.MaxPool2d(kernel_size=2, stride=2),
+#             torch.nn.Conv2d(in_channels=64, out_channels=128, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False),
+#             torch.nn.Conv2d(in_channels=128, out_channels=128, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False)
+#         )
+#         self.edge_layer3 = torch.nn.Sequential(
+#             torch.nn.MaxPool2d(kernel_size=2, stride=2),
+#             torch.nn.Conv2d(in_channels=128, out_channels=256, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False),
+#             torch.nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False),
+#             torch.nn.Conv2d(in_channels=256, out_channels=256, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False)
+#         )
+#         self.edge_layer4 = torch.nn.Sequential(
+#             torch.nn.MaxPool2d(kernel_size=2, stride=2),
+#             torch.nn.Conv2d(in_channels=256, out_channels=512, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False),
+#             torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False),
+#             torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False)
+#         )
+#         self.edge_layer5 = torch.nn.Sequential(
+#             torch.nn.MaxPool2d(kernel_size=2, stride=2),
+#             torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False),
+#             torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False),
+#             torch.nn.Conv2d(in_channels=512, out_channels=512, kernel_size=3, stride=1, padding=1),
+#             torch.nn.ReLU(inplace=False)
+#         )
+
+#         # # feature fusion module
+#         self.fusion_depth1 = nn.Conv2d(192, 64, kernel_size=1)
+#         self.fusion_edge1 = nn.Conv2d(192, 128, kernel_size=1)
+#         self.fusion_depth2 = nn.Conv2d(352, 96, kernel_size=1)
+#         self.fusion_edge2 = nn.Conv2d(352, 256, kernel_size=1)       
+#         self.fusion_depth3 = nn.Conv2d(640, 128, kernel_size=1)
+#         self.fusion_edge3 = nn.Conv2d(640, 512, kernel_size=1)
+
+#         for m in self.modules():
+#             if isinstance(m, nn.Conv2d):
+#                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+#             elif isinstance(m, (nn.BatchNorm2d, nn.InstanceNorm2d, nn.GroupNorm)):
+#                 if m.weight is not None:
+#                     nn.init.constant_(m.weight, 1)
+#                 if m.bias is not None:
+#                     nn.init.constant_(m.bias, 0)
+
+#     def _make_layer(self, dim, stride=1):
+#         layer1 = ResidualBlock(self.in_planes, dim, self.norm_fn, stride=stride)
+#         layer2 = ResidualBlock(dim, dim, self.norm_fn, stride=1)
+#         layers = (layer1, layer2)
+
+#         self.in_planes = dim
+#         return nn.Sequential(*layers)
+
+#     # def forward(self, depth, event, flow=None):
+#     def forward(self, depth, event):
+#         is_list_depth = isinstance(depth, tuple) or isinstance(depth, list)
+#         if is_list_depth:
+#             batch_dim = depth[0].shape[0]
+#             depth = torch.cat(depth, dim=0)
+#         is_list_event = isinstance(event, tuple) or isinstance(event, list)
+#         if is_list_event:
+#             batch_dim = event[0].shape[0]
+#             event = torch.cat(event, dim=0)
+
+#         # layer1
+#         depth_feature_1 = self.relu1(self.norm1(self.depth_layer1(depth)))
+#         depth = (depth + 1.) / 2. * 255.
+#         edge_feature_1 = self.edge_layer1(depth)
+#         event_feature_1 = self.relu2(self.norm2(self.event_layer1(event)))
+
+#         # layer2
+#         depth_feature_2 = self.depth_layer2(depth_feature_1)
+#         edge_feature_2 = self.edge_layer2(edge_feature_1)
+#         event_feature_2 = self.event_layer2(event_feature_1)
+#         fusion_feature_1 = torch.cat((depth_feature_2, edge_feature_2), dim=1)
+#         depth_feature_2 = self.fusion_depth1(fusion_feature_1)
+#         edge_feature_2 = self.fusion_edge1(fusion_feature_1)
+            
+#         # layer3
+#         depth_feature_3 = self.depth_layer3(depth_feature_2)
+#         edge_feature_3 = self.edge_layer3(edge_feature_2)
+#         event_feature_3 = self.event_layer3(event_feature_2)
+#         fusion_feature_2 = torch.cat((depth_feature_3, edge_feature_3), dim=1)
+#         depth_feature_3 = self.fusion_depth2(fusion_feature_2)
+#         edge_feature_3 = self.fusion_edge2(fusion_feature_2)      
+
+#         # layer4
+#         depth_feature_4 = self.depth_layer4(depth_feature_3)
+#         edge_feature_4 = self.edge_layer4(edge_feature_3)
+#         event_feature_4 = self.event_layer4(event_feature_3)
+#         fusion_feature_3 = torch.cat((depth_feature_4, edge_feature_4), dim=1)
+#         depth_feature_4 = self.fusion_depth3(fusion_feature_3)
+#         edge_feature_4 = self.fusion_edge3(fusion_feature_3)
+
+#         # layer5
+#         depth_feature_5 = self.depth_layer5(depth_feature_4)
+#         edge_feature_5 = self.edge_layer5(edge_feature_4)
+#         event_feature_5 = self.event_layer5(event_feature_4)
+
+#         if self.training and self.dropout is not None:
+#             depth_feature_5 = self.dropout1(depth_feature_5)
+#             event_feature_5 = self.dropout2(event_feature_5)
+#         if is_list_depth:
+#             depth_feature_5 = torch.split(depth_feature_5, [batch_dim, batch_dim], dim=0)
+#         if is_list_event:
+#             event_feature_5 = torch.split(event_feature_5, [batch_dim, batch_dim], dim=0)
+
+#         return depth_feature_5, event_feature_5, [depth, edge_feature_1,edge_feature_2,edge_feature_3,edge_feature_4,edge_feature_5]
+
+
+
+
 
 
 # # # rewrite edge detector for homogeneous achitecture
