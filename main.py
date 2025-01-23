@@ -9,7 +9,7 @@ import random
 import torch
 
 from core.datasets_m3ed import DatasetM3ED as Dataset
-from core.backbone import Backbone_Event, Backbone_Fuse, Backbone_Edge, Backbone_Edge_FF
+from core.backbone import Backbone_Event, Backbone_Fuse, Backbone_Edge, Backbone_Edge_FF, Backbone_Edge_FF_Iter
 from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs, to_rotation_matrix, quaternion_from_matrix
 from core.data_preprocess import Data_preprocess
@@ -121,33 +121,61 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
             theta = 100
             loss = alpha * loss_flow + beta * loss_edge + theta * loss_depth
         elif args.backbone == "edge":
-            # flow_preds, depth2edge = model(depth_input, event_input, iters=args.iters)
-            flow_preds, depth2edge_preds = model(depth_input, event_input, iters=args.iters)
-            ## flow loss
-            loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-            flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
-            cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
-            # loss_edge = ClassifyLoss(depth2edge, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
-            loss_edge, loss_edge_last = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
-            # metrics['edge_loss'] = loss_edge.item()
-            metrics['edge_loss'] = loss_edge_last.item()
-            # cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge_preds[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            alpha = 1
-            beta = 100
-            loss = alpha * loss_flow + beta * loss_edge
+            if args.iteration_num == 1:
+                # flow_preds, depth2edge = model(depth_input, event_input, iters=args.iters)
+                flow_preds, depth2edge_preds = model(depth_input, event_input, iters=args.iters)
+                ## flow loss
+                loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+                flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
+                cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+                # loss_edge = ClassifyLoss(depth2edge, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
+                loss_edge, loss_edge_last = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
+                # metrics['edge_loss'] = loss_edge.item()
+                metrics['edge_loss'] = loss_edge_last.item()
+                # cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+                cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge_preds[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+                alpha = 1
+                beta = 100
+                loss = alpha * loss_flow + beta * loss_edge
+            else:
+                depth2edge_input = torch.ones(depth_input.shape, dtype=depth_input.dtype, device=depth_input.device)
+                for it in range(args.iteration_num):
+                    optimizer.zero_grad()
+                    flow_preds, depth2edge_preds = model(depth_input, event_input, depth2edge_input, iters=args.iters)
+                    ## flow loss
+                    loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
+                    flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
+                    cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+                    # loss_edge = ClassifyLoss(depth2edge, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
+                    loss_edge, loss_edge_last = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
+                    # metrics['edge_loss'] = loss_edge.item()
+                    metrics['edge_loss'] = loss_edge_last.item()
+                    # cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+                    cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred_{it}.png', (depth2edge_input[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+                    alpha = 1
+                    beta = 100
+                    loss = alpha * loss_flow + beta * loss_edge
+
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+                    scaler.step(optimizer)
+                    scheduler.step()
+                    scaler.update()
+                    logger.push(metrics)
+
+                    depth2edge_input = depth2edge_preds[-1].detach()
         else:
             raise "Specified backbone doesn't exist"
 
-        scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-
-        scaler.step(optimizer)
-        scheduler.step()
-        scaler.update()
-
-        logger.push(metrics)
+        if args.iteration_num == 1:
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+            scaler.step(optimizer)
+            scheduler.step()
+            scaler.update()
+            logger.push(metrics)
 
 
 def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_threshold=3, is_test=False):
@@ -188,7 +216,14 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         elif args.backbone == "fuse":
             _, flow_up, depth2edge, event2depth = model(depth_input, event_input, iters=24, test_mode=True, idx=i_batch)
         elif args.backbone == "edge":
-            _, flow_up, depth2edge = model(depth_input, event_input, iters=24, test_mode=True, idx=i_batch)
+            if args.iteration_num > 1:
+                depth2edge_input = torch.ones(depth_input.shape, dtype=depth_input.dtype, device=depth_input.device)
+                for it in range(args.iteration_num):
+                    _, flow_up, depth2edge = model(depth_input, event_input, depth2edge_input, iters=24, test_mode=True, idx=i_batch)
+                    cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{it}.png', (depth2edge_input[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8)) 
+                    depth2edge_input = depth2edge[-1].detach()
+            else:
+                _, flow_up, depth2edge = model(depth_input, event_input, iters=24, test_mode=True, idx=i_batch)
 
         visualization_folder = f"./visualization/{args.backbone}"
         if not os.path.exists(visualization_folder):
@@ -220,7 +255,7 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         if args.backbone == "edge":
             ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
             cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
             # for i in range(len(depth2edge)):
             #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{i:02d}.png', (depth2edge[i][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
@@ -367,6 +402,9 @@ if __name__ == '__main__':
                         default='baseline')
     parser.add_argument('--use_feature_fusion', 
                         action='store_true')
+    parser.add_argument('--iteration_num', 
+                        default=1, 
+                        type=int)
     args = parser.parse_args()    
     
     ## set key parameters
@@ -386,10 +424,13 @@ if __name__ == '__main__':
     elif args.backbone == "fuse":
         model = torch.nn.DataParallel(Backbone_Fuse(args), device_ids=args.gpus)
     elif args.backbone == "edge":
-        if args.use_feature_fusion:
-            model = torch.nn.DataParallel(Backbone_Edge_FF(args), device_ids=args.gpus)
+        if args.iteration_num > 1:
+            model = torch.nn.DataParallel(Backbone_Edge_FF_Iter(args), device_ids=args.gpus)
         else:
-            model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)
+            if args.use_feature_fusion:
+                model = torch.nn.DataParallel(Backbone_Edge_FF(args), device_ids=args.gpus)
+            else:
+                model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)
     else:
         raise "Specified backbone doesn't exist"
     print("Parameter Count: %d" % count_parameters(model))
@@ -477,7 +518,8 @@ if __name__ == '__main__':
         logger.total_steps = starting_epoch * len(TrainImgLoader)
 
     min_val_err = 9999.
-    for epoch in range(starting_epoch, args.epochs):
+    max_epochs = args.epochs // args.iteration_num
+    for epoch in range(starting_epoch, max_epochs):
         train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch, occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold, )
 
         torch.cuda.empty_cache()
