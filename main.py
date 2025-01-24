@@ -138,9 +138,9 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
                 beta = 100
                 loss = alpha * loss_flow + beta * loss_edge
             else:
+                loss = 0.
                 depth2edge_input = torch.ones(depth_input.shape, dtype=depth_input.dtype, device=depth_input.device)
                 for it in range(args.iteration_num):
-                    optimizer.zero_grad()
                     flow_preds, depth2edge_preds = model(depth_input, event_input, depth2edge_input, iters=args.iters)
                     ## flow loss
                     loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
@@ -154,28 +154,20 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
                     cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred_{it}.png', (depth2edge_input[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
                     alpha = 1
                     beta = 100
-                    loss = alpha * loss_flow + beta * loss_edge
+                    it_weight = 0.8 ** (args.iteration_num - it - 1)
+                    loss += (alpha * loss_flow + beta * loss_edge) * it_weight
 
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-                    scaler.step(optimizer)
-                    scheduler.step()
-                    scaler.update()
-                    logger.push(metrics)
-
-                    depth2edge_input = depth2edge_preds[-1].detach()
+                    depth2edge_input = depth2edge_preds[-1]
         else:
             raise "Specified backbone doesn't exist"
 
-        if args.iteration_num == 1:
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-            scaler.step(optimizer)
-            scheduler.step()
-            scaler.update()
-            logger.push(metrics)
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
+        scaler.step(optimizer)
+        scheduler.step()
+        scaler.update()
+        logger.push(metrics)
 
 
 def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_threshold=3, is_test=False):
@@ -518,7 +510,8 @@ if __name__ == '__main__':
         logger.total_steps = starting_epoch * len(TrainImgLoader)
 
     min_val_err = 9999.
-    max_epochs = args.epochs // args.iteration_num
+    # max_epochs = args.epochs // args.iteration_num
+    max_epochs = args.epochs
     for epoch in range(starting_epoch, max_epochs):
         train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, device, epoch, occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold, )
 

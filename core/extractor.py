@@ -425,9 +425,9 @@ class Encoder_Edge_Fusion_Iter(nn.Module):
             batch_dim = x[0].shape[0]
             x = torch.cat(x, dim=0)
 
-        # layer1
-        # # x_edge = torch.cat((x, edge_input), dim=1)
-        # x_edge = x * edge_input
+        # # layer1
+        # x_edge = torch.cat((x, edge_input), dim=1)
+        # # x_edge = x * edge_input
         # flow_feature_1 = self.relu1(self.norm1(self.flow_layer1(x_edge)))
         # x = (x + 1.) / 2. * 255.
         # edge_feature_1 = self.edge_layer1(x)
@@ -436,7 +436,7 @@ class Encoder_Edge_Fusion_Iter(nn.Module):
         x_edge = 2 * x_edge - 1.0
         flow_feature_1 = self.relu1(self.norm1(self.flow_layer1(x_edge)))
         x = x * 255.
-        edge_feature_1 = self.edge_layer1(x)       
+        edge_feature_1 = self.edge_layer1(x)  
 
         # layer2
         flow_feature_2 = self.flow_layer2(flow_feature_1)
