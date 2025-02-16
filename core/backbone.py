@@ -1,17 +1,12 @@
-import math 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from core.update import BasicUpdateBlock, DepthMaskHead, EdgeUpdateBlock
-from core.extractor import BasicEncoder, ResidualBlock, Encoder_Edge_Fusion, Encoder_Edge_Fusion_Iter, Decoder_Edge
+from core.update import BasicUpdateBlock, EdgeUpdateBlock
+from core.extractor import BasicEncoder, Encoder_Edge_Fusion, Encoder_Edge_Fusion_Iter, Decoder_Edge
 from core.corr import CorrBlock, AlternateCorrBlock
 from core.utils import coords_grid, upflow, feature_visualizer
-from core.utils_point import invert_pose
-
-import mathutils
 
 try:
     autocast = torch.cuda.amp.autocast
