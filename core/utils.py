@@ -166,9 +166,9 @@ def coords_grid(batch, ht, wd):
     return coords[None].repeat(batch, 1, 1, 1)
 
 
-def upflow8(flow, mode='bilinear'):
-    new_size = (8 * flow.shape[2], 8 * flow.shape[3])
-    return 8 * F.interpolate(flow, size=new_size, mode=mode, align_corners=True)
+def upflow(flow, scale=8, mode='bilinear'):
+    new_size = (scale * flow.shape[2], scale * flow.shape[3])
+    return scale * F.interpolate(flow, size=new_size, mode=mode, align_corners=True)
 
 import matplotlib.pyplot as plt
 def feature_visualizer(feature_maps, save_dir):

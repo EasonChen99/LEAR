@@ -8,7 +8,7 @@ from torch.autograd import Variable
 from core.update import BasicUpdateBlock, DepthMaskHead, EdgeUpdateBlock
 from core.extractor import BasicEncoder, ResidualBlock, Encoder_Edge_Fusion, Encoder_Edge_Fusion_Iter, Decoder_Edge
 from core.corr import CorrBlock, AlternateCorrBlock
-from core.utils import coords_grid, upflow8, feature_visualizer
+from core.utils import coords_grid, upflow, feature_visualizer
 from core.utils_point import invert_pose
 
 import mathutils
@@ -174,7 +174,7 @@ class Backbone_Event(nn.Module):
 
             # upsample predictions
             if up_mask is None:
-                flow_up = upflow8(coords1 - coords0)
+                flow_up = upflow(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
 
@@ -351,7 +351,7 @@ class Backbone_Reconstruction(nn.Module):
 
             # upsample predictions
             if up_mask is None:
-                flow_up = upflow8(coords1 - coords0)
+                flow_up = upflow(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
 
@@ -555,7 +555,7 @@ class Backbone_Transfer(nn.Module):
 
             # upsample predictions
             if up_mask is None:
-                flow_up = upflow8(coords1 - coords0)
+                flow_up = upflow(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
 
@@ -809,7 +809,7 @@ class Backbone_Edge(nn.Module):
 
             # upsample predictions
             if up_mask is None:
-                flow_up = upflow8(coords1 - coords0)
+                flow_up = upflow(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
 
@@ -848,8 +848,11 @@ class Backbone_Edge_FF(nn.Module):
         self.fnet_event = BasicEncoder(input_dim=2, output_dim=256, norm_fn='instance', dropout=args.dropout)
         self.cnet = BasicEncoder(input_dim=1, output_dim=hdim + cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
-        self.edge_update_block = EdgeUpdateBlock(self.args, hidden_dim=256)
         self.edge_detector = Decoder_Edge()
+
+        self.edge_update_block = EdgeUpdateBlock(self.args, hidden_dim=256, input_dim=256+256)
+
+        self.enhance_corr_layer = nn.Conv2d(836, 324, kernel_size=1)
 
     def freeze_bn(self):
         for m in self.modules():
@@ -979,6 +982,9 @@ class Backbone_Edge_FF(nn.Module):
 
             corr = corr_fn(coords1)  # index correlation volume Bx(9x9x4)xH/8xW/8
 
+            corr_add_edge = torch.cat((corr, edge_feature_list[4]), dim=1)
+            corr = self.enhance_corr_layer(corr_add_edge)
+
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
                 net, up_mask, delta_flow = self.update_block(net, inp, corr, flow)
@@ -988,7 +994,7 @@ class Backbone_Edge_FF(nn.Module):
 
             # upsample predictions
             if up_mask is None:
-                flow_up = upflow8(coords1 - coords0)
+                flow_up = upflow(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
 
@@ -998,9 +1004,9 @@ class Backbone_Edge_FF(nn.Module):
             edge_feature_4 = edge_feature_list[4]
             edge_feature_4_net, edge_feature_4_inp = torch.split(edge_feature_4, [256, 256], dim=1)
             warped_event_feature = self.warp(fmap2, coords1 - coords0)
-            # net, edge_feature_4 = self.edge_update_block(net, edge_feature_4_net, edge_feature_4_inp, warped_event_feature)
             edge_feature_4 = self.edge_update_block(edge_feature_4_net, edge_feature_4_inp, warped_event_feature)
             edge_feature_list[4] = edge_feature_4
+
             edge_mask = self.edge_detector(edge_feature_list)
             edge_predictions.append(edge_mask)
 
@@ -1179,7 +1185,7 @@ class Backbone_Edge_FF_Iter(nn.Module):
 
             # upsample predictions
             if up_mask is None:
-                flow_up = upflow8(coords1 - coords0)
+                flow_up = upflow(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
 
@@ -1189,7 +1195,6 @@ class Backbone_Edge_FF_Iter(nn.Module):
             edge_feature_4 = edge_feature_list[4]
             edge_feature_4_net, edge_feature_4_inp = torch.split(edge_feature_4, [256, 256], dim=1)
             warped_event_feature = self.warp(fmap2, coords1 - coords0)
-            # net, edge_feature_4 = self.edge_update_block(net, edge_feature_4_net, edge_feature_4_inp, warped_event_feature)
             edge_feature_4 = self.edge_update_block(edge_feature_4_net, edge_feature_4_inp, warped_event_feature)
             edge_feature_list[4] = edge_feature_4
             edge_mask = self.edge_detector(edge_feature_list)
@@ -1656,7 +1661,7 @@ class Backbone_Fuse(nn.Module):
 
             # upsample predictions
             if up_mask is None:
-                flow_up = upflow8(coords1 - coords0)
+                flow_up = upflow(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
 

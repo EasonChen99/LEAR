@@ -143,7 +143,7 @@ class BasicEncoder(nn.Module):
 
         # output convolution
         self.conv2 = nn.Conv2d(128, output_dim, kernel_size=1)
-
+        
         self.dropout = None
         if dropout > 0:
             self.dropout = nn.Dropout2d(p=dropout)
@@ -190,7 +190,7 @@ class BasicEncoder(nn.Module):
         if not self.return_all_layers:
             return Five
         else:
-            return [One, Two, Three, Four, Five]
+            return One, Two, Three, Four, Five
 
 
 

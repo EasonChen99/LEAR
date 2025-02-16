@@ -186,40 +186,19 @@ class BasicUpdateBlock(nn.Module):
         return net, mask, delta_flow
 
 
-# class EdgeUpdateBlock(nn.Module):
-#     def __init__(self, args, hidden_dim=128):
-#         super(EdgeUpdateBlock, self).__init__()
-#         self.args = args
-#         self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=256+hidden_dim)
-#         self.convd = nn.Conv2d(256, 128, kernel_size=1)
-#         self.convu = nn.Conv2d(128, 256, kernel_size=1)
-
-#     def forward(self, net, edge_feature_net, edge_feature_inp, event_feature):
-#         inp = torch.cat([edge_feature_inp, event_feature], dim=1) # 256 + 256
-#         edge_feature_net = self.convd(edge_feature_net) # 256->128
-#         net = torch.cat((net, edge_feature_net), dim=1)   # 128 + 128
-
-#         net = self.gru(net, inp)
-
-#         net, edge_feature_net = torch.split(net, (128, 128), dim=1)
-#         edge_feature_net = self.convu(edge_feature_net) # 128->256
-#         edge_feature = torch.cat((edge_feature_net, edge_feature_inp), dim=1)
-
-#         return net, edge_feature
-
 class EdgeUpdateBlock(nn.Module):
-    def __init__(self, args, hidden_dim=128):
+    def __init__(self, args, hidden_dim=256, input_dim=128+256):
         super(EdgeUpdateBlock, self).__init__()
         self.args = args
-        self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=256+hidden_dim)
+        self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=input_dim)
 
     def forward(self, edge_feature_net, edge_feature_inp, event_feature):
         '''
-            edge_feature_net: Bx256xHxW
-            edge_feature_inp: Bx256xHxW
-            event_feature:    Bx256xHxW
+            edge_feature_net
+            edge_feature_inp
+            event_feature
         '''
-        inp = torch.cat([edge_feature_inp, event_feature], dim=1) # 256 + 256
+        inp = torch.cat([edge_feature_inp, event_feature], dim=1)
 
         edge_feature_net = self.gru(edge_feature_net, inp)
 
