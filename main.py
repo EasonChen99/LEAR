@@ -389,7 +389,7 @@ if __name__ == '__main__':
                         default=0.5)
     parser.add_argument('--max_depth', 
                         type=float, 
-                        default=10.)
+                        default=100.)
     parser.add_argument('--num_workers', 
                         type=int, 
                         default=3)
