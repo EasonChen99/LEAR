@@ -22,6 +22,8 @@ def get_calib_m3ed(sequence, camera):
             return torch.tensor([1033.22781771, 1032.05548869, 631.84536312, 360.7175681])
         elif sequence in ['spot_outdoor_day_srt_under_bridge_1', 'spot_outdoor_day_srt_under_bridge_1']:
             return torch.tensor([1031.52186613, 1031.70276624,  633.53886647,  364.34446137])
+        elif sequence in ['spot_forest_road_1', 'spot_forest_road_3']:
+            return torch.tensor([1032.96138833, 1032.8263147,   632.38290823, 368.57212974])
         else:
             raise TypeError("Sequence Not Available")
     else:
@@ -33,6 +35,10 @@ def get_calib_m3ed(sequence, camera):
             return torch.tensor([1033.22781771, 1032.05548869, 631.84536312, 360.7175681])
         elif sequence in ['spot_outdoor_day_srt_under_bridge_1', 'spot_outdoor_day_srt_under_bridge_1']:
             return torch.tensor([1030.29161359, 1030.9024083, 634.79835424, 368.11576903])
+        elif sequence in ['spot_forest_road_1', 'spot_forest_road_3']:
+            return torch.tensor([1032.26867081, 1032.57448492,  632.85489859,  370.0490076 ])
+        else:
+            raise TypeError("Sequence Not Available")
 
 def get_left_right_T(sequence):
     if sequence == "falcon_indoor_flight_1":
@@ -55,6 +61,11 @@ def get_left_right_T(sequence):
                              [ 6.3675e-04,  1.0000e+00, -3.0024e-03,  8.7946e-04],
                              [ 3.6526e-03,  3.0000e-03,  9.9999e-01, -2.8266e-04],
                              [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  1.0000e+00]])
+    elif sequence in ['spot_forest_road_1', 'spot_forest_road_3']:
+        return torch.tensor([[ 9.99992821e-01, -7.03218854e-04, -3.72345760e-03, -1.20137685e-01],
+                             [ 6.95582202e-04,  9.99997653e-01, -2.05185517e-03,  1.03034216e-03],
+                             [ 3.72489176e-03,  2.04925047e-03, 9.99990963e-01 , 4.66687603e-04],
+                             [ 0.00000000e+00 , 0.00000000e+00 , 0.00000000e+00  ,1.00000000e+00]])
     else:
         raise TypeError("Sequence Not Available")
 
