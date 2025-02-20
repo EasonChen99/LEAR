@@ -153,7 +153,8 @@ class DatasetM3ED(Dataset):
                         self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'left', f"{idx:05d}"))
                     elif (not dir == test_sequence) and split == 'train':
                         self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'left', f"{idx:05d}"))
-                        self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'right', f"{idx:05d}"))
+                        if dir in ['falcon_indoor_flight_1', 'falcon_indoor_flight_2', 'falcon_outdoor_day_penno_parking_1']:
+                            self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'right', f"{idx:05d}"))
                     
                     R = quaternion_from_matrix(torch.tensor(Ln_T_L0[idx]))
                     T = Ln_T_L0[idx][:3, 3]
