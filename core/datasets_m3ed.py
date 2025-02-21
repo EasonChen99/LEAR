@@ -22,6 +22,8 @@ def get_calib_m3ed(sequence, camera):
             return torch.tensor([1033.22781771, 1032.05548869, 631.84536312, 360.7175681])
         # elif sequence in ['falcon_outdoor_night_penno_parking_1', 'falcon_outdoor_night_penno_parking_2']:
         #     return torch.tensor([1034.39696079, 1034.73607278,  636.27410756,  364.73952748])
+        elif sequence in ['falcon_forest_into_forest_1', 'falcon_forest_into_forest_2', 'falcon_forest_into_forest_4']:
+            return torch.tensor([1033.22946467, 1032.37940162 , 637.14899526,  359.16366857])        
         # elif sequence in ['spot_outdoor_day_srt_under_bridge_1', 'spot_outdoor_day_srt_under_bridge_1']:
         #     return torch.tensor([1031.52186613, 1031.70276624,  633.53886647,  364.34446137])
         elif sequence in ['spot_forest_road_1', 'spot_forest_road_3']:
@@ -41,6 +43,8 @@ def get_calib_m3ed(sequence, camera):
             return torch.tensor([1033.22781771, 1032.05548869, 631.84536312, 360.7175681])
         # elif sequence in ['falcon_outdoor_night_penno_parking_1', 'falcon_outdoor_night_penno_parking_2']:
         #     return torch.tensor([1034.61302587, 1034.83604567,  638.12992827,  366.88002829])
+        elif sequence in ['falcon_forest_into_forest_1', 'falcon_forest_into_forest_2', 'falcon_forest_into_forest_4']:
+            return torch.tensor([1032.7719854,  1031.93236836,  639.10742672,  362.60248038]) 
         # elif sequence in ['spot_outdoor_day_srt_under_bridge_1', 'spot_outdoor_day_srt_under_bridge_1']:
         #     return torch.tensor([1030.29161359, 1030.9024083, 634.79835424, 368.11576903])
         elif sequence in ['spot_forest_road_1', 'spot_forest_road_3']:
@@ -72,7 +76,12 @@ def get_left_right_T(sequence):
     #     return torch.tensor([[ 9.99993617e-01, -6.66130268e-04, -3.51029598e-03, -1.20179395e-01],
     #                          [ 6.66610390e-04,  9.99999769e-01,  1.35607254e-04,  9.10326972e-04],
     #                          [ 3.51020483e-03, -1.37946389e-04,  9.99993830e-01, -4.30589681e-04],
-    #                          [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])        
+    #                          [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])
+    elif sequence in ['falcon_forest_into_forest_1', 'falcon_forest_into_forest_2', 'falcon_forest_into_forest_4']:
+        return torch.tensor([[ 9.99989586e-01, -4.60304775e-04, -4.54058647e-03 ,-1.20070481e-01],
+                             [ 4.55317167e-04,  9.99999292e-01, -1.09942280e-03 , 9.50882179e-04],
+                             [ 4.54108932e-03,  1.09734395e-03,  9.99989087e-01 ,-5.19321703e-04],
+                             [ 0.00000000e+00,  0.00000000e+00 , 0.00000000e+00,  1.00000000e+00]])         
     # elif sequence in ['spot_outdoor_day_srt_under_bridge_1', 'spot_outdoor_day_srt_under_bridge_1']:
     #     return torch.tensor([[ 9.9999e-01, -6.4771e-04, -3.6507e-03, -1.2011e-01],
     #                          [ 6.3675e-04,  1.0000e+00, -3.0024e-03,  8.7946e-04],
@@ -116,8 +125,11 @@ class DatasetM3ED(Dataset):
                     #   'falcon_indoor_flight_3', 
                     #   'falcon_outdoor_day_penno_parking_1',
                     #   'falcon_outdoor_day_penno_parking_2',
-                    'car_urban_day_penno_big_loop',
-                    'car_urban_day_penno_small_loop',
+                    'falcon_forest_into_forest_1',
+                    'falcon_forest_into_forest_2',
+                    'falcon_forest_into_forest_4',
+                    # 'car_urban_day_penno_big_loop',
+                    # 'car_urban_day_penno_small_loop',
                      ]
         
         for dir in scene_list:
@@ -140,6 +152,15 @@ class DatasetM3ED(Dataset):
             elif dir in ['car_urban_day_penno_small_loop']:
                 left = 70
                 right = 20
+            elif dir in ['falcon_forest_into_forest_1']:
+                left = 440
+                right = 480
+            elif dir in ['falcon_forest_into_forest_2']:
+                left = 240
+                right = 230
+            elif dir in ['falcon_forest_into_forest_4']:
+                left =  100
+                right = 380
             else:
                 raise "Sequence doesn't exist in the list"
 
