@@ -32,6 +32,8 @@ def get_calib_m3ed(sequence, camera):
             return torch.tensor([1031.88399229, 1031.48192315 , 634.29808475 , 366.39105342])
         # elif sequence in ['car_urban_night_penno_big_loop', 'car_urban_night_penno_small_loop']:
         #     return torch.tensor([1031.84262859, 1030.10381777 , 635.71409589 , 365.59991372])
+        elif sequence in ['car_forest_into_ponds_long', 'car_forest_into_ponds_short']:
+            return torch.tensor([1031.28303548, 1031.36293954,  635.73771622,  366.81925393])
         else:
             raise TypeError("Sequence Not Available")
     else:
@@ -53,6 +55,8 @@ def get_calib_m3ed(sequence, camera):
             return torch.tensor([1031.36879978 ,1031.06491961 , 634.87768084 , 367.62546105])
         # elif sequence in ['car_urban_night_penno_big_loop', 'car_urban_night_penno_small_loop']:
         #     return torch.tensor([1030.46186128, 1029.51180204,  635.69022466 , 364.32444857])
+        elif sequence in ['car_forest_into_ponds_long', 'car_forest_into_ponds_short']:
+            return torch.tensor([1030.62646968, 1030.98305576,  636.68872098,  368.70448786])
         else:
             raise TypeError("Sequence Not Available")
 
@@ -101,7 +105,12 @@ def get_left_right_T(sequence):
     #     return torch.tensor([[ 9.99996013e-01 ,-6.08160070e-04, -2.75745341e-03, -1.20188402e-01],
     #                          [ 6.09451349e-04,  9.99999705e-01,  4.67470872e-04 , 1.06054268e-03],
     #                          [ 2.75716830e-03, -4.69149542e-04,  9.99996089e-01,  1.07289756e-04],
-    #                          [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])        
+    #                          [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])       
+    elif sequence in ['car_forest_into_ponds_long', 'car_forest_into_ponds_short']:
+        return torch.tensor([[ 9.99992228e-01, -6.45914237e-04, -3.88937476e-03, -1.20192478e-01],
+                             [ 6.37427554e-04,  9.99997414e-01, -2.18286148e-03 , 9.52772120e-04],
+                             [ 3.89077465e-03,  2.18036532e-03,  9.99990054e-01,  5.21780332e-05],
+                             [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00 , 1.00000000e+00]]) 
     else:
         raise TypeError("Sequence Not Available")
 
@@ -125,11 +134,15 @@ class DatasetM3ED(Dataset):
                     #   'falcon_indoor_flight_3', 
                     #   'falcon_outdoor_day_penno_parking_1',
                     #   'falcon_outdoor_day_penno_parking_2',
-                    'falcon_forest_into_forest_1',
-                    'falcon_forest_into_forest_2',
-                    'falcon_forest_into_forest_4',
+                    # 'falcon_forest_into_forest_1',
+                    # 'falcon_forest_into_forest_2',
+                    # 'falcon_forest_into_forest_4',
+                    'spot_forest_road_1',
+                    'spot_forest_road_3',
                     # 'car_urban_day_penno_big_loop',
                     # 'car_urban_day_penno_small_loop',
+                    # 'car_forest_into_ponds_long',
+                    # 'car_forest_into_ponds_short',
                      ]
         
         for dir in scene_list:
@@ -161,6 +174,18 @@ class DatasetM3ED(Dataset):
             elif dir in ['falcon_forest_into_forest_4']:
                 left =  100
                 right = 380
+            elif dir in ['spot_forest_road_1']:
+                left =  35
+                right = 360
+            elif dir in ['spot_forest_road_3']:
+                left = 115
+                right = 370
+            elif dir in ['car_forest_into_ponds_long']:
+                left = 200
+                right = 30
+            elif dir in ['car_forest_into_ponds_short']:
+                left = 40
+                right = 180
             else:
                 raise "Sequence doesn't exist in the list"
 
@@ -174,7 +199,7 @@ class DatasetM3ED(Dataset):
                         self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'left', f"{idx:05d}"))
                     elif (not dir == test_sequence) and split == 'train':
                         self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'left', f"{idx:05d}"))
-                        if dir in ['falcon_indoor_flight_1', 'falcon_indoor_flight_2', 'falcon_outdoor_day_penno_parking_1']:
+                        if dir in ['falcon_indoor_flight_1', 'falcon_indoor_flight_2', 'falcon_outdoor_day_penno_parking_1', 'spot_forest_road_1']:
                             self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'right', f"{idx:05d}"))
                     
                     R = quaternion_from_matrix(torch.tensor(Ln_T_L0[idx]))

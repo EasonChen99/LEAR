@@ -59,7 +59,12 @@ class Data_preprocess:
         indexes_uvRT_deoccl_list = indexes_uvRT_deoccl[indexes_uvRT_deoccl_list_indexes[0][:], indexes_uvRT_deoccl_list_indexes[1][:]]
 
         indexes_temp = torch.zeros(indexes_uvRT.shape[0], device=indexes_uvRT_deoccl_list.device, dtype=torch.int32)
-        indexes_temp[indexes_uvRT_deoccl_list.cpu().numpy() - 1] = indexes_uvRT_deoccl_list
+        
+        # indexes_temp[indexes_uvRT_deoccl_list.cpu().numpy() - 1] = indexes_uvRT_deoccl_list
+        indexes = indexes_uvRT_deoccl_list.cpu().numpy() - 1
+        indexes[indexes==indexes_temp.shape[0]] -= 1
+        indexes_temp[indexes] = indexes_uvRT_deoccl_list
+
 
         return indexes_temp
 
@@ -480,7 +485,7 @@ class Data_preprocess:
             depth_img_no_occlusion_GT = sparse_to_dense(depth_img_no_occlusion.cpu().detach().numpy())
             depth_img_no_occlusion_GT = torch.tensor(depth_img_no_occlusion_GT, device=device)
             event_mask = (rgb[0, :, :] > 0) + (rgb[1, :, :] > 0)
-            depth_img_no_occlusion_GT_masked = depth_img_no_occlusion_GT * torch.tensor(event_mask, device=device)
+            depth_img_no_occlusion_GT_masked = depth_img_no_occlusion_GT * event_mask
             pc_masked = cam_model.depth2pc(depth_img_no_occlusion_GT_masked)
             pc_masked_rotated = rotate_back(torch.tensor(pc_masked, device=device), RT)
             uv_masked_RT, depth_masked_RT, _, _, VI_masked_indexes_RT = cam_model.project_withindex_pytorch(pc_masked_rotated, self.real_shape)
