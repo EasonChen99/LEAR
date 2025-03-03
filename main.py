@@ -8,7 +8,8 @@ import argparse
 import random
 import torch
 
-from core.datasets_m3ed import DatasetM3ED as Dataset
+# from core.datasets_m3ed import DatasetM3ED as Dataset
+from core.datasets_mvsec import DatasetMVSEC as Dataset
 from core.backbone import Backbone_Event, Backbone_Fuse, Backbone_Edge, Backbone_Edge_FF, Backbone_Edge_FF_Iter
 from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs
@@ -60,14 +61,18 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         R_err = sample['rot_error']
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
+        # # M3ED Half Resolution
+        # crop_h, crop_w, crop_x, crop_y = 288, 512, 36, 64
+        # MVSEC
+        crop_h, crop_w, crop_x, crop_y = 240, 320, 10, 13
         if args.backbone == "baseline":
-            event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
+            event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=crop_h, w=crop_w)
         elif args.backbone == "fuse":
-            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
+            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=crop_h, w=crop_w)
             event2depth_gt = depth_input[:, 2, :, :].unsqueeze(1)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         elif args.backbone == "edge":
-            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=288, w=512)
+            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=crop_h, w=crop_w)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         else:
             raise "Specified backbone doesn't exist"
@@ -189,14 +194,18 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         R_err = sample['rot_error']
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
+        # # M3ED Half Resolution
+        # crop_h, crop_w, crop_x, crop_y = 288, 512, 36, 64
+        # MVSEC
+        crop_h, crop_w, crop_x, crop_y = 240, 320, 10, 13
         if args.backbone == "baseline":
-            event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
+            event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
         elif args.backbone == "fuse":
-            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
+            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
             event2depth_gt = depth_input[:, 2, :, :].unsqueeze(1)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         elif args.backbone == "edge":
-            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=288, w=512)
+            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         else:
             raise "Specified backbone doesn't exist"
@@ -282,7 +291,7 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         epe_list.append(epe[val].mean().item())
         out_list.append(out[val].cpu().numpy())
 
-        R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=36, y=64, h=288, w=512)
+        R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=crop_x, y=crop_y, h=crop_h, w=crop_w)
         Time += time.time() - end
         if flag:
             outliers.append(i_batch)
@@ -327,7 +336,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',
                         type=str,
                         metavar='DIR',
-                        default='/media/eason/Backup/Datasets/M3ED/generated/Falcon',
+                        default='/media/eason/Backup/Datasets/M3ED/generated/Spot',
                         help='path to dataset')
     parser.add_argument('--ev_input', 
                         '--event_representation',
