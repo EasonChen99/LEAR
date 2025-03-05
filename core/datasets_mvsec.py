@@ -14,9 +14,13 @@ from core.utils_point import quaternion_from_matrix, invert_pose, rotate_forward
 
 def get_calib_mvsec(sequence):
     if sequence in ['indoor_flying1', 'indoor_flyiny2', 'indoor_flying3']:
-        return torch.tensor([199.6530123165822, 199.6530123165822, 177.43276376280926, 126.81215684365904])
-    elif sequence in ["outdoor_day1", "outdoor_day2"]:
-        return torch.tensor([194.8389461655774, 194.8389461655774, 170.20896993269332, 127.00404928416845])
+        return torch.tensor([226.38018519795807, 226.15002947047415, 173.6470807871759, 133.73271487507847])
+    else:
+        raise TypeError("Sequence Not Available")
+
+def get_distortion_coeffs(sequence):
+    if sequence in ['indoor_flying1', 'indoor_flyiny2', 'indoor_flying3']:
+        return np.array([-0.048031442223833355, 0.011330957517194437, -0.055378166304281135, 0.021500973881459395]).reshape((4, 1))
     else:
         raise TypeError("Sequence Not Available")
 
@@ -37,8 +41,6 @@ class DatasetMVSEC(Dataset):
         scene_list = [
                       'indoor_flying1', 
                       'indoor_flying3', 
-                    #   'outdoor_day1',
-                    #   'outdoor_day2',
                      ]
         
         for dir in scene_list:
@@ -156,6 +158,14 @@ class DatasetMVSEC(Dataset):
             pc_in = rotate_forward(pc_in, R, T)
 
         event_frame = np.load(event_frame_path)
+        # # undistort
+        calib = get_calib_mvsec(run)
+        K = calib.cpu().numpy()
+        K = np.array([[K[0],  0,  K[2]],
+                    [0,   K[1], K[3]],
+                    [0,   0,  1]], dtype=np.float64)
+        D = get_distortion_coeffs(run)
+        event_frame = cv2.fisheye.undistortImage(event_frame, K, D, Knew=K)
         event_time_frame = torch.tensor(event_frame).float()
         event_time_frame[event_time_frame<0] = 0
         event_time_frame /= torch.max(event_time_frame)
