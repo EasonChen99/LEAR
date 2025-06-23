@@ -6,7 +6,7 @@ from torch.autograd import Variable
 from core.update import BasicUpdateBlock, EdgeUpdateBlock
 from core.extractor import BasicEncoder, Encoder_Edge_Fusion, Encoder_Edge_Fusion_Iter, Decoder_Edge
 from core.corr import CorrBlock, AlternateCorrBlock
-from core.utils import coords_grid, upflow, feature_visualizer
+from core.utils import coords_grid, upflow, feature_visualizer, visualize_distinctiveness_map
 
 try:
     autocast = torch.cuda.amp.autocast
@@ -133,8 +133,9 @@ class Backbone_Event(nn.Module):
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
 
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap1")
-        # feature_visualizer(fmap2[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap2")
+        # visualize_distinctiveness_map(fmap1, fmap2, f"visualization/distinctiveness/baseline/{idx}")
+        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"visualization/feature/{idx}_fmap1")
+        # feature_visualizer(fmap2[0, ...].cpu().detach().numpy(), f"visualization/feature/{idx}_fmap2")
 
         if self.args.alternate_corr:
             corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
@@ -568,7 +569,8 @@ class Backbone_Edge_FF(nn.Module):
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
 
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap1")
+        # visualize_distinctiveness_map(fmap1, fmap2, f"visualization/distinctiveness/ours/{idx}")
+        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"visualization/feature/{idx}_fmap1")
         # feature_visualizer(fmap2[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap2")
 
         if self.args.alternate_corr:
@@ -613,7 +615,7 @@ class Backbone_Edge_FF(nn.Module):
 
             flow_predictions.append(flow_up)
 
-            # # detect edge
+            # detect edge
             edge_feature_4 = edge_feature_list[4]
             edge_feature_4_net, edge_feature_4_inp = torch.split(edge_feature_4, [256, 256], dim=1)
             warped_event_feature = self.warp(fmap2, coords1 - coords0)
@@ -624,7 +626,7 @@ class Backbone_Edge_FF(nn.Module):
             edge_predictions.append(edge_mask)
 
         if test_mode:
-            return coords1 - coords0, flow_up, edge_predictions
+            return flow_predictions, flow_up, edge_predictions
             
         return flow_predictions, edge_predictions
 

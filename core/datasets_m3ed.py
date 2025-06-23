@@ -129,16 +129,16 @@ class DatasetM3ED(Dataset):
         self.all_files = []
         
         scene_list = [
-                    #   'falcon_indoor_flight_1', 
-                    #   'falcon_indoor_flight_2', 
-                    #   'falcon_indoor_flight_3', 
+                      'falcon_indoor_flight_1', 
+                      'falcon_indoor_flight_2', 
+                      'falcon_indoor_flight_3', 
                     #   'falcon_outdoor_day_penno_parking_1',
                     #   'falcon_outdoor_day_penno_parking_2',
                     # 'falcon_forest_into_forest_1',
                     # 'falcon_forest_into_forest_2',
                     # 'falcon_forest_into_forest_4',
-                    'spot_forest_road_1',
-                    'spot_forest_road_3',
+                    # 'spot_forest_road_1',
+                    # 'spot_forest_road_3',
                     # 'car_urban_day_penno_big_loop',
                     # 'car_urban_day_penno_small_loop',
                     # 'car_forest_into_ponds_long',

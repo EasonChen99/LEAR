@@ -8,8 +8,9 @@ import argparse
 import random
 import torch
 
-# from core.datasets_m3ed import DatasetM3ED as Dataset
-from core.datasets_mvsec import DatasetMVSEC as Dataset
+from core.datasets_m3ed import DatasetM3ED as Dataset
+# from core.datasets_mvsec import DatasetMVSEC as Dataset
+# from core.datasets_dsec import DatasetDSEC as Dataset
 from core.backbone import Backbone_Event, Backbone_Fuse, Backbone_Edge, Backbone_Edge_FF, Backbone_Edge_FF_Iter
 from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
 from core.utils_point import overlay_imgs
@@ -61,10 +62,12 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         R_err = sample['rot_error']
 
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
-        # # M3ED Half Resolution
-        # crop_h, crop_w, crop_x, crop_y = 288, 512, 36, 64
-        # MVSEC
-        crop_h, crop_w, crop_x, crop_y = 240, 320, 10, 13
+        # M3ED Half Resolution
+        crop_h, crop_w, crop_x, crop_y = 288, 512, 36, 64
+        # # MVSEC
+        # crop_h, crop_w, crop_x, crop_y = 240, 320, 10, 13
+        # # DSEC
+        # crop_h, crop_w, crop_x, crop_y = 360, 480, 60, 80
         if args.backbone == "baseline":
             event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=crop_h, w=crop_w)
         elif args.backbone == "fuse":
@@ -178,7 +181,7 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
     Time = 0.
     outliers, err_r_list, err_t_list = [], [], []
     pose_loss = []
-    success_rate = 0.
+    inlier_rate = 0.
 
     epe_iter_list = []
     for _ in range(args.iteration_num):
@@ -193,11 +196,14 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         T_err = sample['tr_error']
         R_err = sample['rot_error']
 
+
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
-        # # M3ED Half Resolution
-        # crop_h, crop_w, crop_x, crop_y = 288, 512, 36, 64
-        # MVSEC
-        crop_h, crop_w, crop_x, crop_y = 240, 320, 10, 13
+        # M3ED Half Resolution
+        crop_h, crop_w, crop_x, crop_y = 288, 512, 36, 64
+        # # MVSEC
+        # crop_h, crop_w, crop_x, crop_y = 240, 320, 10, 13
+        # # DSEC
+        # crop_h, crop_w, crop_x, crop_y = 360, 480, 60, 80
         if args.backbone == "baseline":
             event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
         elif args.backbone == "fuse":
@@ -215,9 +221,9 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
 
         end = time.time()
         if args.backbone == "baseline":
-            _, flow_up = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
+            flow_predictions, flow_up = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
         elif args.backbone == "fuse":
-            _, flow_up, depth2edge, event2depth = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
+            flow_predictions, flow_up, depth2edge, event2depth = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
         elif args.backbone == "edge":
             if args.iteration_num > 1:
                 depth2edge_input = torch.ones(depth_input.shape, dtype=depth_input.dtype, device=depth_input.device)
@@ -242,8 +248,8 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
                 depth_input_vis = overlay_imgs(event_input[0, :3, :, :]*0, depth_input_vis[0, 0, :, :])
                 cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_4_mask_depth_{args.iteration_num}.png", (depth_input_vis / np.max(depth_input_vis) * 255).astype(np.uint8))
             else:
-                _, flow_up, depth2edge = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
-
+                flow_predictions, flow_up, depth2edge = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
+        
         visualization_folder = f"./visualization/{args.backbone}"
         if not os.path.exists(visualization_folder):
             os.makedirs(f"{visualization_folder}/train")
@@ -251,7 +257,10 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
         vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
         vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
-        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_1_event_input.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
+        vis_event_time_image = (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8)
+        invalid = (vis_event_time_image[:, :, 0] + vis_event_time_image[:, :, 1] + vis_event_time_image[:, :, 2]) == 0
+        vis_event_time_image[invalid] += 255
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_1_event_input.png", vis_event_time_image)
         vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
         cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
         flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
@@ -274,10 +283,14 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         if args.backbone == "edge":
             ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
             cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            # for i in range(len(depth2edge)):
-            #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{i:02d}.png', (depth2edge[i][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-
+            if args.use_feature_fusion:
+                cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+                # for i in range(len(depth2edge)):
+                #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{i:02d}.png', (depth2edge[i][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+                #     flow_viz = flow_to_image(flow_predictions[i][0, ...].permute(1,2,0).cpu().detach().numpy())
+                #     cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred_{i:02d}.png", flow_viz)
+            else:
+                cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
         epe = torch.sum((flow_up - flow_gt) ** 2, dim=1).sqrt()
         mag = torch.sum(flow_gt ** 2, dim=1).sqrt()
@@ -292,6 +305,20 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         out_list.append(out[val].cpu().numpy())
 
         R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=crop_x, y=crop_y, h=crop_h, w=crop_w)
+        inlier_rate += len(inliers) / (depth_input > 0).sum().cpu().detach().numpy()
+
+        # visualize inliers
+        mask = np.zeros((depth_input.shape[2], depth_input.shape[3]), dtype=np.uint8)
+        for y, x in inliers:
+            if 0 <= y < depth_input.shape[2] and 0 <= x < depth_input.shape[3]:
+                mask[y, x] = 1
+        import matplotlib.pyplot as plt
+        plt.figure(figsize=(6, 6))
+        plt.imshow(mask, cmap='gray')
+        plt.axis('off')
+        plt.tight_layout()
+        plt.savefig(f"./visualization/inlier/{args.backbone}/{i_batch:05d}.png")
+
         Time += time.time() - end
         if flag:
             outliers.append(i_batch)
@@ -303,11 +330,9 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
                 err_r, err_t = err_Pose(R_pred, T_pred, R_err[0], T_err[0])
                 err_r_list.append(err_r.item())
                 err_t_list.append(err_t.item())
-                if err_r < 1. and err_t < 10.:
-                    success_rate += 1
                 print(f"{i_batch:05d}: {np.mean(err_t_list):.5f} {np.mean(err_r_list):.5f} | {np.median(err_t_list):.5f} "
-                        f"{np.median(err_r_list):.5f} | {np.mean(pose_loss):.5f} | {np.array(epe_iter_list)/(i_batch+1)} | "
-                        f"{len(outliers)} | {Time / (i_batch+1):.5f}")
+                        f"{np.median(err_r_list):.5f} | {np.mean(pose_loss):.5f} | {np.mean(np.array(epe_list)):.5f} | "
+                        f"{inlier_rate / (i_batch+1):.5f} | {len(outliers)} | {Time / (i_batch+1):.5f}")
                 # # Define text properties
                 # org = (flow_viz.shape[1]-400, flow_viz.shape[0]-70)
                 # font = cv2.FONT_HERSHEY_SIMPLEX
@@ -329,14 +354,14 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
     if not is_test:
         return epe, f1, pose_loss
     else:
-        return err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss, success_rate   
+        return err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss, inlier_rate   
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_path',
                         type=str,
                         metavar='DIR',
-                        default='/media/eason/Backup/Datasets/M3ED/generated/Spot',
+                        default='/media/eason/Backup/Datasets/Event_Datasets/M3ED/generated/Falcon',
                         help='path to dataset')
     parser.add_argument('--ev_input', 
                         '--event_representation',
@@ -478,13 +503,13 @@ if __name__ == '__main__':
                                                 pin_memory=True)
     if args.evaluate:
         with torch.no_grad():
-            err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss, success_rate = test(args, TestImgLoader, model, device, 
+            err_t_list, err_r_list, outliers, Time, epe, f1, pose_loss, inlier_rate = test(args, TestImgLoader, model, device, 
                                                                    occlusion_kernel=occlusion_kernel, occlusion_threshold=occlusion_threshold, 
                                                                    is_test=True)
             print(f"Mean trans error {np.mean(err_t_list):.5f}  Mean rotation error {np.mean(err_r_list):.5f}")
             print(f"Median trans error {np.median(err_t_list):.5f}  Median rotation error {np.median(err_r_list):.5f}")
             print(f"epe {epe:.5f} pose_loss {pose_loss:.5f} Mean {Time / len(TestImgLoader):.5f} per frame")
-            print(f"success rate {success_rate/len(TestImgLoader):.5f}")
+            print(f"inlier rate {inlier_rate/len(TestImgLoader):.5f}")
             print(f"Outliers number {len(outliers)}/{len(TestImgLoader)} {outliers}")
         sys.exit()
 

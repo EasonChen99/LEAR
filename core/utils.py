@@ -177,6 +177,25 @@ def feature_visualizer(feature_maps, save_dir):
     plt.imshow(feature_map_mean)
     plt.savefig(f"{save_dir}.png")
 
+def visualize_distinctiveness_map(feat1, feat2, save_dir, title="Feature Distinctiveness Map"):
+    """
+    Visualize a distinctiveness map using a heatmap.
+    """
+    feat1_norm = F.normalize(feat1, p=2, dim=1)
+    feat2_norm = F.normalize(feat2, p=2, dim=1)
+    similarity = (feat1_norm * feat2_norm).sum(dim=1).squeeze(0)  # (H, W)
+    
+    # Convert cosine similarity to distinctiveness: 1 - (similarity + 1) / 2 → range [0, 1]
+    distinctiveness = (similarity + 1.0) / 2.0
+
+    plt.figure(figsize=(6, 6))
+    plt.imshow(distinctiveness.cpu().numpy(), cmap='coolwarm')
+    plt.colorbar(label='Distinctiveness (Hardness of Matching)')
+    plt.title(title)
+    plt.axis('off')
+    plt.tight_layout()
+    plt.savefig(f"{save_dir}.png")
+
 import cv2
 def edge_nms(image):
     """

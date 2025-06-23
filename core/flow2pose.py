@@ -59,7 +59,7 @@ def Flow2Pose(flow_up, depth, calib, flow_gt=None, uncertainty=None, x=60, y=160
 
     pts3d, pts2d, indexes = cam_model.deproject_pytorch(depth_img, pc_project_uv[0, :, :, :])
     if pts3d.shape[0] < 4:
-        return 0, 0, np.zeros([1, 2], dtype=np.uint8), True
+        return torch.tensor([1., 0., 0., 0.]), torch.tensor([1., 1., 1.]), np.zeros([1, 2], dtype=np.uint8), True
     
     camera = {'model': 'SIMPLE_PINHOLE', 
               'width': w, 'height': h, 
