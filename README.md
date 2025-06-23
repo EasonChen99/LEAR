@@ -17,7 +17,7 @@ cd visibility_package
 python setup.py install
 cd ../..
 ```
-Additionally, please compile [PoseLib](https://github.com/PoseLib/PoseLib) for use with pose solvers.
+Additionally, please compile [PoseLib](https://github.com/PoseLib/PoseLib) for use with pose solvers, and install the [Metavision SDK](https://docs.prophesee.ai/stable/installation/linux.html#chapter-installation-linux) to obtain the filters for data preprocessing.
 
 ## Required Data
 To evaluate/train LEAR, you could download the M3ED dataset.
