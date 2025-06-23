@@ -307,17 +307,17 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         R_pred, T_pred, inliers, flag = Flow2Pose(flow_up, depth_input, calib, MAX_DEPTH=args.max_depth, x=crop_x, y=crop_y, h=crop_h, w=crop_w)
         inlier_rate += len(inliers) / (depth_input > 0).sum().cpu().detach().numpy()
 
-        # visualize inliers
-        mask = np.zeros((depth_input.shape[2], depth_input.shape[3]), dtype=np.uint8)
-        for y, x in inliers:
-            if 0 <= y < depth_input.shape[2] and 0 <= x < depth_input.shape[3]:
-                mask[y, x] = 1
-        import matplotlib.pyplot as plt
-        plt.figure(figsize=(6, 6))
-        plt.imshow(mask, cmap='gray')
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(f"./visualization/inlier/{args.backbone}/{i_batch:05d}.png")
+        # # visualize inliers
+        # mask = np.zeros((depth_input.shape[2], depth_input.shape[3]), dtype=np.uint8)
+        # for y, x in inliers:
+        #     if 0 <= y < depth_input.shape[2] and 0 <= x < depth_input.shape[3]:
+        #         mask[y, x] = 1
+        # import matplotlib.pyplot as plt
+        # plt.figure(figsize=(6, 6))
+        # plt.imshow(mask, cmap='gray')
+        # plt.axis('off')
+        # plt.tight_layout()
+        # plt.savefig(f"./visualization/inlier/{args.backbone}/{i_batch:05d}.png")
 
         Time += time.time() - end
         if flag:
