@@ -47,7 +47,7 @@ def Flow2Pose(flow_up, depth, calib, flow_gt=None, uncertainty=None, x=60, y=160
 
     if (flow_gt is not None) or (uncertainty is not None):
         depth_img = depth_img * mask
-
+    
     cam_model = CameraModel()
     cam_params = calib[0].clone().cpu().numpy()
     x, y = x, y
@@ -55,9 +55,10 @@ def Flow2Pose(flow_up, depth, calib, flow_gt=None, uncertainty=None, x=60, y=160
     cam_params[3] = cam_params[3] + h / 2. - (x + x + h) / 2.
     cam_model.focal_length = cam_params[:2]
     cam_model.principal_point = cam_params[2:]
-    cam_mat = np.array([[cam_params[0], 0, cam_params[2]], [0, cam_params[1], cam_params[3]], [0, 0, 1.]])
+    # cam_mat = np.array([[cam_params[0], 0, cam_params[2]], [0, cam_params[1], cam_params[3]], [0, 0, 1.]])
 
     pts3d, pts2d, indexes = cam_model.deproject_pytorch(depth_img, pc_project_uv[0, :, :, :])
+
     if pts3d.shape[0] < 4:
         return torch.tensor([1., 0., 0., 0.]), torch.tensor([1., 1., 1.]), np.zeros([1, 2], dtype=np.uint8), True
     
@@ -83,6 +84,7 @@ def Flow2Pose(flow_up, depth, calib, flow_gt=None, uncertainty=None, x=60, y=160
                                                 'verbose': False,
                                                 }
                                             )
+    
     inliers = inliers['inliers']
     
     R = torch.tensor(pose.q)

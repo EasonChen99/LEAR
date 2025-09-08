@@ -9,33 +9,33 @@ import pandas as pd
 import mathutils
 import torch
 from torch.utils.data import Dataset
+from torchvision import transforms
 import torchvision.transforms.functional as F
 from core.utils_point import quaternion_from_matrix, invert_pose, rotate_forward, rotate_back
 
 def get_calib(sequence):
     if sequence in ['interlaken_00_c', 'interlaken_00_d', 'interlaken_00_e', 'interlaken_00_f', 'interlaken_00_g', 'thun_00_a']:
-        return torch.tensor([569.7632987676102, 569.7632987676102, 335.0999870300293, 221.23667526245117])
+        return torch.tensor([1164.6238115833075, 1164.6238115833075, 713.5791168212891, 570.9349365234375])
     elif sequence in ['zurich_city_00_a', 'zurich_city_00_b', 'zurich_city_01_a', 'zurich_city_01_b', 'zurich_city_01_c', 
                       'zurich_city_01_d', 'zurich_city_01_e', 'zurich_city_01_f', 'zurich_city_02_a', 'zurich_city_02_b',
                       'zurich_city_02_c', 'zurich_city_02_d', 'zurich_city_02_e', 'zurich_city_03_a']:
-        return torch.tensor([583.3081203392971, 583.3081203392971, 336.83414459228516, 220.91131019592285])
+        return torch.tensor([1150.8249465165975, 1150.8249465165975, 724.4121398925781, 569.1058044433594])
     elif sequence in ['zurich_city_04_a',
                       'zurich_city_04_b', 'zurich_city_04_c', 'zurich_city_04_d', 'zurich_city_04_e', 'zurich_city_04_f',
                       'zurich_city_05_a', 'zurich_city_05_b', 'zurich_city_06_a', 'zurich_city_07_a', 'zurich_city_08_a',
                       'zurich_city_09_a', 'zurich_city_09_b', 'zurich_city_09_c', 'zurich_city_09_d', 'zurich_city_09_e',
                       'zurich_city_10_a', 'zurich_city_10_b', 'zurich_city_11_a', 'zurich_city_11_b', 'zurich_city_11_c']:
-        return torch.tensor([569.2873535700672, 569.2873535700672, 336.2678413391113, 222.2889060974121])
+        return torch.tensor([1150.8943600390282, 1150.8943600390282, 723.4334411621094, 572.102180480957])
     else:
         raise "Sequence doesn't exist."
 
-class DatasetDSEC(Dataset):
-    def __init__(self, dataset_dir, event_representation, max_t=0.5, max_r=5., split='test', device='cuda:0', test_sequence='thun_00_a'):
-        super(DatasetDSEC, self).__init__()
+class DatasetDSECRGB(Dataset):
+    def __init__(self, dataset_dir, max_t=0.5, max_r=5., split='test', device='cuda:0', test_sequence='thun_00_a'):
+        super(DatasetDSECRGB, self).__init__()
         self.device = device
         self.max_r = max_r
         self.max_t = max_t
         self.root_dir = dataset_dir
-        self.event_representation = event_representation
         self.split = split
         self.timestamps_list = {}
 
@@ -47,8 +47,8 @@ class DatasetDSEC(Dataset):
                         'interlaken_00_d',
                         'interlaken_00_e',
                         'interlaken_00_f',
-                        'interlaken_00_g',
-                        # 'thun_00_a',
+                        # 'interlaken_00_g',
+                        'thun_00_a',
                         'zurich_city_00_a',
                         # 'zurich_city_00_b',
                         'zurich_city_01_a',
@@ -83,7 +83,7 @@ class DatasetDSEC(Dataset):
                         # 'zurich_city_10_b',
                         'zurich_city_11_a',
                         'zurich_city_11_b',
-                        # 'zurich_city_11_c',
+                        'zurich_city_11_c',
                      ]
         
         for dir in scene_list:
@@ -94,14 +94,14 @@ class DatasetDSEC(Dataset):
             timestamps = timestamps[1:]
 
             for idx in range(timestamps.size):
-                if not os.path.exists(os.path.join(self.root_dir, dir, "local_maps", f"point_cloud_{idx:05d}"+'.h5')):
+                if not os.path.exists(os.path.join(self.root_dir, dir, "local_maps_image", f"point_cloud_{idx*2:05d}"+'.h5')):
                     continue
-                if not os.path.exists(os.path.join(self.root_dir, dir, f"event_frames_{self.event_representation}", 'left', f"event_frame_{idx:05d}"+'.npy')):
+                if not os.path.exists(os.path.join(self.root_dir, dir, "rgb", f"{idx*2:06d}"+'.png')):
                     continue
                 if dir == test_sequence and split.startswith('test'):
-                    self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'left', f"{idx:05d}"))
+                    self.all_files.append(os.path.join(dir, 'rgb', f"{idx*2:06d}"))
                 elif (not dir == test_sequence) and split == 'train':
-                    self.all_files.append(os.path.join(dir, f"event_frames_{self.event_representation}", 'left', f"{idx:05d}"))
+                    self.all_files.append(os.path.join(dir, "rgb", f"{idx*2:06d}"))
             
             self.timestamps_list[dir] = timestamps
         
@@ -130,9 +130,28 @@ class DatasetDSEC(Dataset):
                                         rotx, roty, rotz])
                     self.test_RT.append([i, transl_x, transl_y, transl_z,
                                         rotx, roty, rotz])
-
             assert len(self.test_RT) == len(self.all_files), "Something wrong with test RTs"
     
+    def custom_transform(self, rgb, img_rotation=0., flip=False):
+        resize = transforms.Resize((rgb.height // 2, rgb.width // 2))
+
+        to_tensor = transforms.ToTensor()
+        normalization = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                             std=[0.229, 0.224, 0.225])
+
+        #rgb = crop(rgb)
+        if self.split == 'train':
+            color_transform = transforms.ColorJitter(0.1, 0.1, 0.1)
+            rgb = color_transform(rgb)
+            if flip:
+                rgb = F.hflip(rgb)
+            rgb = F.rotate(rgb, img_rotation)
+
+        rgb = resize(rgb)
+        rgb = to_tensor(rgb)
+        rgb = normalization(rgb)
+
+        return rgb
     
     def __len__(self):
         return len(self.all_files)    
@@ -140,11 +159,10 @@ class DatasetDSEC(Dataset):
     def __getitem__(self, idx):
         item = self.all_files[idx]
         run = str(item.split('/')[0])
-        camera = str(item.split('/')[2])
-        timestamp = str(item.split('/')[3])
+        timestamp = str(item.split('/')[2])
 
-        event_frame_path = os.path.join(self.root_dir, run, f"event_frames_{self.event_representation}", camera, 'event_frame_'+timestamp+'.npy')
-        pc_path = os.path.join(self.root_dir, run, "local_maps", "point_cloud_"+f"{int(timestamp):05d}"+'.h5')
+        img_path = os.path.join(self.root_dir, run, "rgb", f'{timestamp}.png')
+        pc_path = os.path.join(self.root_dir, run, "local_maps_image", "point_cloud_"+f"{int(timestamp):05d}"+'.h5')
 
         try:
             with h5py.File(pc_path, 'r') as hf:
@@ -165,6 +183,8 @@ class DatasetDSEC(Dataset):
         else:
             raise TypeError("Wrong PointCloud shape")
         
+        img = Image.open(img_path)
+
         h_mirror = False
         if np.random.rand() > 0.5 and self.split == 'train':
             h_mirror = True
@@ -174,33 +194,12 @@ class DatasetDSEC(Dataset):
         if self.split == 'train':
             img_rotation = np.random.uniform(-5, 5)
 
+        img = self.custom_transform(img, img_rotation, h_mirror)
+
         if self.split == 'train':
             R = mathutils.Euler((0, 0, radians(img_rotation)), 'XYZ')
             T = mathutils.Vector((0., 0., 0.))
             pc_in = rotate_forward(pc_in, R, T)
-
-        event_frame = np.load(event_frame_path)
-        event_time_frame = torch.tensor(event_frame).float()
-        event_time_frame[event_time_frame<0] = 0
-        event_time_frame /= torch.max(event_time_frame)
-
-        if event_time_frame.shape[2] <= 4:
-            event_time_frame = F.to_pil_image(event_time_frame.permute(2, 0, 1))
-            if h_mirror:
-                event_time_frame = event_time_frame.transpose(Image.FLIP_LEFT_RIGHT)
-            event_time_frame = event_time_frame.rotate(img_rotation)
-            event_time_frame = F.to_tensor(event_time_frame)
-            event_frame = event_time_frame
-        else:
-            event_frames = []
-            for i in range(0, event_time_frame.shape[2], 4):
-                event_time_frame_sub = F.to_pil_image(event_time_frame[:, :, i:i+4].permute(2, 0, 1))
-                if h_mirror:
-                    event_time_frame_sub = event_time_frame_sub.transpose(Image.FLIP_LEFT_RIGHT)
-                event_time_frame_sub = event_time_frame_sub.rotate(img_rotation)
-                event_time_frame_sub = F.to_tensor(event_time_frame_sub)
-                event_frames.append(event_time_frame_sub)
-            event_frame = torch.cat(event_frames, dim=0)
 
         if self.split != 'test':
             max_angle = self.max_r
@@ -226,12 +225,13 @@ class DatasetDSEC(Dataset):
         R, T = torch.tensor(R), torch.tensor(T)
 
         calib = get_calib(run)
+        calib /= 2.
 
         if h_mirror:
-            calib[2] = event_frame.shape[2] - calib[2]
+            calib[2] = (img.shape[2] / 2)*2 - calib[2]
 
 
-        sample = {'event_frame': event_frame, 'point_cloud': pc_in, 
+        sample = {'event_frame': img, 'point_cloud': pc_in, 
                   'calib': calib, 'tr_error': T, 'rot_error': R}
 
         return sample        

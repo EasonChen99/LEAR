@@ -258,9 +258,11 @@ def rotation_vector_to_euler(rvecs):
 
 
 def overlay_imgs(rgb, lidar):
-    rgb = rgb.clone().cpu().permute(1,2,0).numpy()
+    rgb = rgb.clone().cpu().permute(1,2,0).detach().numpy()
     if rgb.shape[2] == 3:
-        rgb = rgb
+        std = [0.229, 0.224, 0.225]
+        mean = [0.485, 0.456, 0.406]
+        rgb = rgb*std+mean
     else:
         rgb = np.concatenate((np.zeros([rgb.shape[0], rgb.shape[1], 1]), rgb), axis=2)
 
