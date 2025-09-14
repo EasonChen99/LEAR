@@ -396,7 +396,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',
                         type=str,
                         metavar='DIR',
-                        default='/media/eason/Backup/Datasets/Event_Datasets/M3ED/generated_PoseTracking/Falcon',
+                        default='/media/eason/Backup/Datasets/Event_Datasets/M3ED/generated_PoseTracking/Car',
                         help='path to dataset')
     parser.add_argument('--ev_input', 
                         '--event_representation',
