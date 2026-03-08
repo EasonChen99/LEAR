@@ -272,51 +272,51 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
                 depth_input_vis = overlay_imgs(event_input[0, :3, :, :]*0, depth_input_vis[0, 0, :, :])
                 cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_4_mask_depth_{args.iteration_num}.png", (depth_input_vis / np.max(depth_input_vis) * 255).astype(np.uint8))
             else:
-                # flow_predictions, flow_up, depth2edge = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
-                flow_predictions, flow_up = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch, output_edge=False)
+                flow_predictions, flow_up, depth2edge = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
+                # flow_predictions, flow_up = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch, output_edge=False)
         Time += time.time() - end
 
-        # visualization_folder = f"./visualization/{args.backbone}"
-        # if not os.path.exists(visualization_folder):
-        #     os.makedirs(f"{visualization_folder}/train")
-        #     os.makedirs(f"{visualization_folder}/test")
-        # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
-        # vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
-        # vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
-        # vis_event_time_image = (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8)
-        # invalid = (vis_event_time_image[:, :, 0] + vis_event_time_image[:, :, 1] + vis_event_time_image[:, :, 2]) == 0
-        # vis_event_time_image[invalid] += 255
-        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_1_event_input.png", vis_event_time_image)
-        # vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
-        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
-        # flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
-        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
-        # flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
-        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
-        # warp_vis_event_time_image = warp(event_input, flow_up)
-        # warp_vis_event_time_image = warp_vis_event_time_image[0,...].permute(1, 2, 0).cpu().detach().numpy()
-        # warp_vis_event_time_image = np.concatenate((np.zeros([warp_vis_event_time_image.shape[0], warp_vis_event_time_image.shape[1], 1]), warp_vis_event_time_image), axis=2)
-        # warp_vis_event_time_image = warp_vis_event_time_image[:, :, [2, 0, 1]]
-        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_4_1_warp_event_input.png", (warp_vis_event_time_image / np.max(warp_vis_event_time_image) * 255).astype(np.uint8))
-        # if args.backbone == "fuse":
-        #     vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
-        #     cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
-        #     ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
-        #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        #     original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
-        #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_1_3_event2depth_pred.png', original_depth)
-        # if args.backbone == "edge":
-        #     ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
-        #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        #     if args.use_feature_fusion:
-        #         cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        #         # for i in range(len(depth2edge)):
-        #         #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{i:02d}.png', (depth2edge[i][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-        #         #     flow_viz = flow_to_image(flow_predictions[i][0, ...].permute(1,2,0).cpu().detach().numpy())
-        #         #     cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred_{i:02d}.png", flow_viz)
-        #     else:
-        #         cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        visualization_folder = f"./visualization/{args.backbone}"
+        if not os.path.exists(visualization_folder):
+            os.makedirs(f"{visualization_folder}/train")
+            os.makedirs(f"{visualization_folder}/test")
+        vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
+        vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
+        vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
+        vis_event_time_image = (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8)
+        invalid = (vis_event_time_image[:, :, 0] + vis_event_time_image[:, :, 1] + vis_event_time_image[:, :, 2]) == 0
+        vis_event_time_image[invalid] += 255
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_1_event_input.png", vis_event_time_image)
+        vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
+        flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
+        flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+        warp_vis_event_time_image = warp(event_input, flow_up)
+        warp_vis_event_time_image = warp_vis_event_time_image[0,...].permute(1, 2, 0).cpu().detach().numpy()
+        warp_vis_event_time_image = np.concatenate((np.zeros([warp_vis_event_time_image.shape[0], warp_vis_event_time_image.shape[1], 1]), warp_vis_event_time_image), axis=2)
+        warp_vis_event_time_image = warp_vis_event_time_image[:, :, [2, 0, 1]]
+        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_4_1_warp_event_input.png", (warp_vis_event_time_image / np.max(warp_vis_event_time_image) * 255).astype(np.uint8))
+        if args.backbone == "fuse":
+            vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
+            cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
+            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_1_3_event2depth_pred.png', original_depth)
+        if args.backbone == "edge":
+            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
+            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            if args.use_feature_fusion:
+                cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+                # for i in range(len(depth2edge)):
+                #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{i:02d}.png', (depth2edge[i][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+                #     flow_viz = flow_to_image(flow_predictions[i][0, ...].permute(1,2,0).cpu().detach().numpy())
+                #     cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred_{i:02d}.png", flow_viz)
+            else:
+                cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
         epe = torch.sum((flow_up - flow_gt) ** 2, dim=1).sqrt()
         mag = torch.sum(flow_gt ** 2, dim=1).sqrt()
@@ -395,7 +395,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_path',
                         type=str,
                         metavar='DIR',
-                        default='/media/eason/Backup/Datasets/Event_Datasets/M3ED/generated_PoseTracking/Car',
+                        default='/media/eason/Backup/Datasets/Event_Datasets/M3ED/generated_PoseTracking/Falcon',
                         help='path to dataset')
     parser.add_argument('--ev_input', 
                         '--event_representation',

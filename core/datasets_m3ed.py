@@ -174,9 +174,9 @@ class DatasetM3ED(Dataset):
         self.all_files = []
         
         scene_list = [
-                    # 'falcon_indoor_flight_1', 
-                    # 'falcon_indoor_flight_2', 
-                    # 'falcon_indoor_flight_3', 
+                    'falcon_indoor_flight_1', 
+                    'falcon_indoor_flight_2', 
+                    'falcon_indoor_flight_3', 
                     # 'falcon_outdoor_day_penno_parking_1',
                     # 'falcon_outdoor_day_penno_parking_2',
                     # 'falcon_outdoor_night_high_beams',
@@ -196,8 +196,8 @@ class DatasetM3ED(Dataset):
                     # 'spot_forest_road_3',
                     # 'spot_outdoor_day_srt_under_bridge_1',
                     # 'spot_outdoor_day_srt_under_bridge_2',
-                    'car_urban_day_penno_big_loop',
-                    'car_urban_day_penno_small_loop',
+                    # 'car_urban_day_penno_big_loop',
+                    # 'car_urban_day_penno_small_loop',
                     # 'car_urban_night_penno_big_loop',
                     # 'car_urban_night_penno_small_loop',
                     # 'car_forest_into_ponds_long',
