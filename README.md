@@ -1,8 +1,8 @@
 # LEAR
 This repository contains the source code for our paper:
 
-[LEAR: Learning Edge-Aware Representations for Event-to-LiDAR Localization](https://arxiv.org/pdf/2503.00167)<br/>
-Kuangyi Chen, Jun Zhang, Yuxi Hu, Friedrich Fraundorfer<br/>
+[LEAR: Learning Edge-Aware Representations for Event-to-LiDAR Localization](https://arxiv.org/pdf/2603.01839)<br/>
+Kuangyi Chen, Jun Zhang, Yuxi Hu, Yi Zhou, Friedrich Fraundorfer<br/>
 
 ## Requirements
 The code has been trained and tested with PyTorch 2.2.2 and Cuda 12.2.
@@ -26,8 +26,6 @@ Additionally, please compile [PoseLib](https://github.com/PoseLib/PoseLib) for u
 To evaluate/train LEAR, you could download the M3ED dataset.
 * [M3ED](https://m3ed.io/data_overview/)
 
-We trained and tested LEAR on the M3ED Falcon Indoor sequences flight_1, flight_2, and flight_3.
-
 To obtain the required data for direct use, we sample a pre-defined range of point cloud from the whole LiDAR maps for every provided pose.
 ```Shell
 python tools/map2pc.py --dataset [PATH_TO_DATA] --platform [PLATFORM_NAME] --sequence [SPECIFIED_SEQUENCE] --save_dir [PATH_TO_SAVEDIR]
@@ -38,7 +36,7 @@ python tools/event2frame.py --dataset [PATH_TO_DATA] --sequence [SPECIFIED_SEQUE
 ```
 
 ## Demos
-Pretrained models can be downloaded from [google drive](https://drive.google.com/file/d/1NumLFxHTif-rJo9nRU0_DKwHg09KQwmG/view?usp=drive_link)
+Pretrained models can be downloaded from [google drive](https://drive.google.com/file/d/1NumLFxHTif-rJo9nRU0_DKwHg09KQwmG/view?usp=sharing)
 
 You can demo a trained model on a sequence of frames
 ```Shell

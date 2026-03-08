@@ -85,7 +85,6 @@ if __name__ == '__main__':
             continue
         
         if args.method == "timesurface":
-            # for id in range(idx_end-idx_start):
             for id in range(idx_cur - idx_start):
                 idx = int(id + idx_start)
                 y, x = event_data['y'][idx]//k, event_data['x'][idx]//k
@@ -94,43 +93,6 @@ if __name__ == '__main__':
                 else:
                     event_time_image[y, x, 1] = event_data['t'][idx]
             event_time_image[event_time_image > 0] -= event_data['t'][idx_start]
-        elif args.method == "ours_denoise_activity":
-            activity_time_ths = args.time_window // 100 # Length of the time window for activity filtering (in us)
-            activity_filter = ActivityNoiseFilterAlgorithm(1280, 720, activity_time_ths)
-            events_buf = ActivityNoiseFilterAlgorithm.get_empty_output_buffer()
-
-            new_dtype = np.dtype({
-                            'names': ['x', 'y', 'p', 't'],                # Field names
-                            'formats': ['<u2', '<u2', '<i2', '<i8'],      # Data types for each field
-                            'offsets': [0, 2, 4, 8],                      # Byte offsets for each field
-                            'itemsize': 16                                # Total size of each entry
-                            })
-            events = np.zeros(idx_cur-idx_start, dtype=new_dtype)
-            events['x'] = event_data['x'][idx_start:idx_cur]
-            events['y'] = event_data['y'][idx_start:idx_cur]
-            events['p'] = event_data['p'][idx_start:idx_cur]
-            events['t'] = event_data['t'][idx_start:idx_cur]
-            activity_filter.process_events(events, events_buf)
-            events_buf = np.asarray(events_buf)
-
-            r = 6
-            for idx in range(len(events_buf)):
-                y, x = events_buf['y'][idx]//k, events_buf['x'][idx]//k
-                if events_buf['p'][idx] > 0:
-                    patch = event_time_image[max(0, y-r):y+r+1, max(0, x-r):x+r+1, 0]
-                    patch = np.where(patch>0, patch-(events_buf['t'][idx]-patch)/15., patch)
-                    patch[patch<0] = 0
-                    event_time_image[max(0, y-r):y+r+1, max(0, x-r):x+r+1, 0] = patch
-                    event_time_image[y, x, 0] = events_buf['t'][idx]
-                else:
-                    patch = event_time_image[max(0, y-r):y+r+1, max(0, x-r):x+r+1, 1]
-                    patch = np.where(patch>0, patch-(events_buf['t'][idx]-patch)/15., patch)
-                    patch[patch<0] = 0
-                    event_time_image[max(0, y-r):y+r+1, max(0, x-r):x+r+1, 1] = patch
-                    event_time_image[y, x, 1] = events_buf['t'][idx]
-            if len(events_buf) > 0:        
-                event_time_image[event_time_image > 0] -= events_buf['t'][0]
-            event_time_image[event_time_image < 0] = 0        
         elif args.method == "ours_denoise_stc_trail":
             trail_filter_ths = args.time_window // 10  # Length of the time window for activity filtering (in us)
             trail_filter = TrailFilterAlgorithm(1280, 720, trail_filter_ths)
@@ -202,55 +164,6 @@ if __name__ == '__main__':
                     patch = np.where(patch>=event_time_image[y,x,1], patch-1, patch)
                     event_time_image[y-r:y+r+1, x-r:x+r+1, 1] = patch
                     event_time_image[y, x, 1] = (2 * r + 1)**2
-            event_time_image[event_time_image < 0] = 0
-        elif args.method == "ours":
-            r = 6
-            for id in range(idx_cur-idx_start):
-                idx = int(id + idx_start)
-                y, x = event_data['y'][idx]//k, event_data['x'][idx]//k
-                if event_data['p'][idx] > 0:
-                    patch = event_time_image[y-r:y+r+1, x-r:x+r+1, 0]
-                    patch = np.where(patch>=event_time_image[y,x,0], patch-(event_data['t'][idx]-patch)/15., patch)
-                    event_time_image[y-r:y+r+1, x-r:x+r+1, 0] = patch
-                    event_time_image[y, x, 0] = event_data['t'][idx]
-                else:
-                    patch = event_time_image[y-r:y+r+1, x-r:x+r+1, 1]
-                    patch = np.where(patch>=event_time_image[y,x,1], patch-(event_data['t'][idx]-patch)/15., patch)
-                    event_time_image[y-r:y+r+1, x-r:x+r+1, 1] = patch
-                    event_time_image[y, x, 1] = event_data['t'][idx]
-            event_time_image[event_time_image > 0] -= event_data['t'][idx_start]
-            event_time_image[event_time_image < 0] = 0
-        elif args.method == "ours_denoise":
-            r = 6
-            B = 1
-            R = 1
-            threshold = 0.7
-            total_range = np.arange(idx_start, idx_cur)
-            subsequences = np.array_split(total_range, B)
-            for subseq in subsequences:
-                mask = np.zeros((rows, cols), dtype=bool)
-                for idx in subseq:
-                    y, x = event_data['y'][idx]//k, event_data['x'][idx]//k
-                    if event_data['p'][idx] > 0:
-                        patch = event_time_image[max(0, y-r):y+r+1, max(0, x-r):x+r+1, 0]
-                        patch = np.where(patch>0, patch-(event_data['t'][idx]-patch)/15., patch)
-                        patch[patch<0] = 0
-                        event_time_image[max(0, y-r):y+r+1, max(0, x-r):x+r+1, 0] = patch
-                        event_time_image[y, x, 0] = event_data['t'][idx]
-                    else:
-                        patch = event_time_image[max(0, y-r):y+r+1, max(0, x-r):x+r+1, 1]
-                        patch = np.where(patch>0, patch-(event_data['t'][idx]-patch)/15., patch)
-                        patch[patch<0] = 0
-                        event_time_image[max(0, y-r):y+r+1, max(0, x-r):x+r+1, 1] = patch
-                        event_time_image[y, x, 1] = event_data['t'][idx]
-                    patch = event_time_image[max(0, y-R):y+R+1, max(0, x-R):x+R+1, :]
-                    valid_count = ((patch[:, :, 0] > 0) | (patch[:, :, 1] > 0)).sum()
-                    if valid_count / (patch.shape[0]*patch.shape[1]) < threshold:
-                        mask[y, x] = True
-                    else:
-                        mask[y, x] = False
-                event_time_image[mask] *= 0
-            event_time_image[event_time_image > 0] -= event_data['t'][idx_start]
             event_time_image[event_time_image < 0] = 0
         else:
             raise "Method doesn't exit."

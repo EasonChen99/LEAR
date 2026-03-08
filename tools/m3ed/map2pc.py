@@ -58,16 +58,15 @@ if __name__ == '__main__':
         local_map = torch.matmul(pose, local_map)
         indexes = local_map[0, :] > -1.
         
-        # ## falcon_indoor_flight
-        # indexes = indexes & (local_map[0, :] < 10.)
-        # indexes = indexes & (local_map[1, :] > -5.)
-        # indexes = indexes & (local_map[1, :] < 5.)
+        # # indoor
+        indexes = indexes & (local_map[0, :] < 10.)
+        indexes = indexes & (local_map[1, :] > -5.)
+        indexes = indexes & (local_map[1, :] < 5.)
 
-        # falcon_outdoor_day_penno_parking, falcon_outdoor_night_penno_parking, spot_outdoor_day_srt_under_bridge
-        # car_urban_day_penno_big_loop, car_urban_day_penno_small_loop
-        indexes = indexes & (local_map[0, :] < 100.)
-        indexes = indexes & (local_map[1, :] > -25.)
-        indexes = indexes & (local_map[1, :] < 25.)
+        # # outdoor
+        # indexes = indexes & (local_map[0, :] < 100.)
+        # indexes = indexes & (local_map[1, :] > -25.)
+        # indexes = indexes & (local_map[1, :] < 25.)
         
         
         local_map = local_map[:, indexes]
