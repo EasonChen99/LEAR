@@ -12,12 +12,12 @@ import torch
 from core.datasets_m3ed import DatasetM3ED as Dataset
 # from core.datasets_mvsec import DatasetMVSEC as Dataset
 # from core.datasets_dsec import DatasetDSEC as Dataset
-from core.backbone import Backbone_Event, Backbone_Fuse, Backbone_Edge, Backbone_Edge_FF, Backbone_Edge_FF_Iter
+from core.backbone import Backbone_Event, Backbone_Edge, Backbone_Edge_FF
 from core.utils import (count_parameters, merge_inputs, fetch_optimizer, Logger)
-from core.utils_point import overlay_imgs, to_rotation_matrix
+from core.utils_point import overlay_imgs
 from core.data_preprocess import Data_preprocess
 from core.flow2pose import Flow2Pose, err_Pose
-from core.losses import warp, sequence_loss, ClassifyLoss, SigLoss, ProposedLoss
+from core.losses import warp, sequence_loss, ClassifyLoss, ProposedLoss
 from core.flow_viz import flow_to_image
 
 try:
@@ -75,36 +75,27 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
         # crop_h, crop_w, crop_x, crop_y = 360, 480, 60, 80
         if args.backbone == "baseline":
             event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=crop_h, w=crop_w)
-        elif args.backbone == "fuse":
-            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=crop_h, w=crop_w)
-            event2depth_gt = depth_input[:, 2, :, :].unsqueeze(1)
-            depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         elif args.backbone == "edge":
             event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, h=crop_h, w=crop_w)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         else:
             raise "Specified backbone doesn't exist"
 
-        visualization_folder = f"./visualization/{args.backbone}/train"
-        if not os.path.exists(visualization_folder):
-            os.makedirs(f"{visualization_folder}/train")
-            os.makedirs(f"{visualization_folder}/test")
-        vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
-        vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
-        vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
-        cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_1_1_event_input.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
-        vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
-        cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
-        flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
-        cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
-        if args.backbone == "fuse":
-            vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
-            cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
-            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
-            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        # visualization_folder = f"./visualization/{args.backbone}/train"
+        # if not os.path.exists(visualization_folder):
+        #     os.makedirs(f"{visualization_folder}/train")
+        #     os.makedirs(f"{visualization_folder}/test")
+        # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
+        # vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
+        # vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
+        # cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_1_1_event_input.png", (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8))
+        # vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
+        # cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
+        # flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
+        # cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
         if args.backbone == "edge":
             ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
-            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        #     cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
         if args.bin:
             event_input[event_input > 0] = 1.
@@ -115,60 +106,18 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
             loss, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
             flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
             cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
-        elif args.backbone == "fuse":
-            flow_preds, depth2edge, event2depth = model(depth_input, event_input, iters=args.train_iters)
+        elif args.backbone == "edge":
+            flow_preds, depth2edge_preds = model(depth_input, event_input, iters=args.train_iters)
             ## flow loss
             loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-            flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
-            cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
-            ## edge loss
-            depth2edge_bi = torch.cat((1.-depth2edge, depth2edge), dim=1)
-            loss_edge = ClassifyLoss(depth2edge_bi, ground_truth_depth2edge, loss_func="Weighted_Cross_Entropy_Loss")
-            metrics['edge_loss'] = loss_edge.item()
-            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            ## depth loss
-            loss_depth_fn = SigLoss()
-            loss_depth = loss_depth_fn(event2depth, event2depth_gt)
-            metrics['depth_loss'] = loss_depth.item()
-            original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
-            cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_1_3_event2depth_pred.png', original_depth)
+            # flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
+            # cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+            loss_edge, loss_edge_last = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
+            metrics['edge_loss'] = loss_edge_last.item()
+            # cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge_preds[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
             alpha = 1
             beta = 100
-            theta = 100
-            loss = alpha * loss_flow + beta * loss_edge + theta * loss_depth
-        elif args.backbone == "edge":
-            if args.iteration_num == 1:
-                flow_preds, depth2edge_preds = model(depth_input, event_input, iters=args.train_iters)
-                ## flow loss
-                loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-                flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
-                cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
-                loss_edge, loss_edge_last = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
-                metrics['edge_loss'] = loss_edge_last.item()
-                cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge_preds[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-                alpha = 1
-                beta = 100
-                loss = alpha * loss_flow + beta * loss_edge
-            else:
-                loss = 0.
-                depth2edge_input = torch.ones(depth_input.shape, dtype=depth_input.dtype, device=depth_input.device)
-                for it in range(args.iteration_num):
-                    flow_preds, depth2edge_preds = model(depth_input, event_input, depth2edge_input, iters=args.train_iters)
-                    ## flow loss
-                    loss_flow, metrics = sequence_loss(flow_preds, flow_gt, args.gamma, MAX_FLOW=400)
-                    flow_viz = flow_to_image(flow_preds[-1][0, ...].permute(1,2,0).cpu().detach().numpy())
-                    cv2.imwrite(f"./visualization/{args.backbone}/train/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
-                    loss_edge, loss_edge_last = ClassifyLoss(depth2edge_preds, ground_truth_depth2edge, loss_func="Sequence_Weighted_Cross_Entropy_Loss")
-                    metrics['edge_loss'] = loss_edge_last.item()
-                    cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred_{it}.png', (depth2edge_input[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-                    alpha = 1
-                    beta = 100
-                    it_weight = 0.8 ** (args.iteration_num - it - 1)
-                    loss += (alpha * loss_flow + beta * loss_edge) * it_weight
-
-                    depth2edge_input = depth2edge_preds[-1]
-
-                cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge_input[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+            loss = alpha * loss_flow + beta * loss_edge
         else:
             raise "Specified backbone doesn't exist"
 
@@ -227,10 +176,6 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         # crop_h, crop_w, crop_x, crop_y = 360, 480, 60, 80
         if args.backbone == "baseline":
             event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
-        elif args.backbone == "fuse":
-            event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
-            event2depth_gt = depth_input[:, 2, :, :].unsqueeze(1)
-            depth_input = depth_input[:, 0, :, :].unsqueeze(1)
         elif args.backbone == "edge":
             event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
@@ -246,77 +191,44 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         end = time.time()
         if args.backbone == "baseline":
             flow_predictions, flow_up = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
-        elif args.backbone == "fuse":
-            flow_predictions, flow_up, depth2edge, event2depth = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
         elif args.backbone == "edge":
-            if args.iteration_num > 1:
-                depth2edge_input = torch.ones(depth_input.shape, dtype=depth_input.dtype, device=depth_input.device)
-                for it in range(args.iteration_num):
-                    _, flow_up, depth2edge = model(depth_input, event_input, depth2edge_input, iters=args.test_iters, test_mode=True, idx=i_batch)
-                    cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{it}.png', (depth2edge_input[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8)) 
-                    depth_input_vis = depth_input * depth2edge_input
-                    depth_input_vis = overlay_imgs(event_input[0, :3, :, :]*0, depth_input_vis[0, 0, :, :])
-                    cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_4_mask_depth_{it}.png", (depth_input_vis / np.max(depth_input_vis) * 255).astype(np.uint8))
-
-                    # depth2edge_input = depth2edge_input * depth2edge[-1]
-                    depth2edge_input = depth2edge[-1]
-
-                    # calculate current epe loss
-                    epe = torch.sum((flow_up - flow_gt) ** 2, dim=1).sqrt()
-                    epe = epe.view(-1)
-                    epe = epe[val].mean().item()
-                    epe_iter_list[it] += epe
-
-                cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge_input[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-                depth_input_vis = depth_input * depth2edge_input
-                depth_input_vis = overlay_imgs(event_input[0, :3, :, :]*0, depth_input_vis[0, 0, :, :])
-                cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_4_mask_depth_{args.iteration_num}.png", (depth_input_vis / np.max(depth_input_vis) * 255).astype(np.uint8))
-            else:
-                flow_predictions, flow_up, depth2edge = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
-                # flow_predictions, flow_up = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch, output_edge=False)
+            flow_predictions, flow_up, depth2edge = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch)
+            # flow_predictions, flow_up = model(depth_input, event_input, iters=args.test_iters, test_mode=True, idx=i_batch, output_edge=False)
         Time += time.time() - end
 
-        visualization_folder = f"./visualization/{args.backbone}"
-        if not os.path.exists(visualization_folder):
-            os.makedirs(f"{visualization_folder}/train")
-            os.makedirs(f"{visualization_folder}/test")
-        vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
-        vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
-        vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
-        vis_event_time_image = (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8)
-        invalid = (vis_event_time_image[:, :, 0] + vis_event_time_image[:, :, 1] + vis_event_time_image[:, :, 2]) == 0
-        vis_event_time_image[invalid] += 255
-        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_1_event_input.png", vis_event_time_image)
-        vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
-        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
-        flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
-        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
-        flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
-        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
-        warp_vis_event_time_image = warp(event_input, flow_up)
-        warp_vis_event_time_image = warp_vis_event_time_image[0,...].permute(1, 2, 0).cpu().detach().numpy()
-        warp_vis_event_time_image = np.concatenate((np.zeros([warp_vis_event_time_image.shape[0], warp_vis_event_time_image.shape[1], 1]), warp_vis_event_time_image), axis=2)
-        warp_vis_event_time_image = warp_vis_event_time_image[:, :, [2, 0, 1]]
-        cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_4_1_warp_event_input.png", (warp_vis_event_time_image / np.max(warp_vis_event_time_image) * 255).astype(np.uint8))
-        if args.backbone == "fuse":
-            vis_event2depth_gt= overlay_imgs(event_input[0, :3, :, :]*0, event2depth_gt[0, 0, :, :])
-            cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_2_event2depth_gt.png", (vis_event2depth_gt / np.max(vis_event2depth_gt) * 255).astype(np.uint8))       
-            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
-            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            original_depth = overlay_imgs(event_input[0, :, :, :]*0, event2depth[0, 0, :, :].detach())
-            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_1_3_event2depth_pred.png', original_depth)
-        if args.backbone == "edge":
-            ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
-            cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-            if args.use_feature_fusion:
-                cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-                # for i in range(len(depth2edge)):
-                #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{i:02d}.png', (depth2edge[i][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
-                #     flow_viz = flow_to_image(flow_predictions[i][0, ...].permute(1,2,0).cpu().detach().numpy())
-                #     cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred_{i:02d}.png", flow_viz)
-            else:
-                cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        # visualization_folder = f"./visualization/{args.backbone}"
+        # if not os.path.exists(visualization_folder):
+        #     os.makedirs(f"{visualization_folder}/train")
+        #     os.makedirs(f"{visualization_folder}/test")
+        # vis_event_time_image = event_input[0,...].permute(1, 2, 0).cpu().numpy()
+        # vis_event_time_image = np.concatenate((np.zeros([vis_event_time_image.shape[0], vis_event_time_image.shape[1], 1]), vis_event_time_image), axis=2)
+        # vis_event_time_image = vis_event_time_image[:, :, [2, 0, 1]]
+        # vis_event_time_image = (vis_event_time_image / np.max(vis_event_time_image) * 255).astype(np.uint8)
+        # invalid = (vis_event_time_image[:, :, 0] + vis_event_time_image[:, :, 1] + vis_event_time_image[:, :, 2]) == 0
+        # vis_event_time_image[invalid] += 255
+        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_1_1_event_input.png", vis_event_time_image)
+        # vis_depth_input = overlay_imgs(event_input[0, :3, :, :]*0, depth_input[0, 0, :, :])
+        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_2_1_depth_input.png", (vis_depth_input / np.max(vis_depth_input) * 255).astype(np.uint8))
+        # flow_viz = flow_to_image(flow_gt[0, ...].permute(1,2,0).cpu().detach().numpy())
+        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_1_flow_gt.png", flow_viz) 
+        # flow_viz = flow_to_image(flow_up[0, ...].permute(1,2,0).cpu().detach().numpy())
+        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred.png", flow_viz)
+        # warp_vis_event_time_image = warp(event_input, flow_up)
+        # warp_vis_event_time_image = warp_vis_event_time_image[0,...].permute(1, 2, 0).cpu().detach().numpy()
+        # warp_vis_event_time_image = np.concatenate((np.zeros([warp_vis_event_time_image.shape[0], warp_vis_event_time_image.shape[1], 1]), warp_vis_event_time_image), axis=2)
+        # warp_vis_event_time_image = warp_vis_event_time_image[:, :, [2, 0, 1]]
+        # cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_4_1_warp_event_input.png", (warp_vis_event_time_image / np.max(warp_vis_event_time_image) * 255).astype(np.uint8))
+        # if args.backbone == "edge":
+        #     ground_truth_depth2edge = depth2edge_gt[:, 0, :, :].long()
+        #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_2_depth2edge_gt.png', (ground_truth_depth2edge[0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        #     if args.use_feature_fusion:
+        #         cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[-1][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        #         # for i in range(len(depth2edge)):
+        #         #     cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{i:02d}.png', (depth2edge[i][0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
+        #         #     flow_viz = flow_to_image(flow_predictions[i][0, ...].permute(1,2,0).cpu().detach().numpy())
+        #         #     cv2.imwrite(f"./visualization/{args.backbone}/test/{i_batch:05d}_3_2_flow_pred_{i:02d}.png", flow_viz)
+        #     else:
+        #         cv2.imwrite(f'./visualization/{args.backbone}/test/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))
 
         epe = torch.sum((flow_up - flow_gt) ** 2, dim=1).sqrt()
         mag = torch.sum(flow_gt ** 2, dim=1).sqrt()
@@ -502,16 +414,11 @@ if __name__ == '__main__':
 
     if args.backbone == "baseline":
         model = torch.nn.DataParallel(Backbone_Event(args), device_ids=args.gpus)
-    elif args.backbone == "fuse":
-        model = torch.nn.DataParallel(Backbone_Fuse(args), device_ids=args.gpus)
     elif args.backbone == "edge":
-        if args.iteration_num > 1:
-            model = torch.nn.DataParallel(Backbone_Edge_FF_Iter(args), device_ids=args.gpus)
+        if args.use_feature_fusion:
+            model = torch.nn.DataParallel(Backbone_Edge_FF(args), device_ids=args.gpus)
         else:
-            if args.use_feature_fusion:
-                model = torch.nn.DataParallel(Backbone_Edge_FF(args), device_ids=args.gpus)
-            else:
-                model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)
+            model = torch.nn.DataParallel(Backbone_Edge(args), device_ids=args.gpus)
     else:
         raise "Specified backbone doesn't exist"
     print("Parameter Count: %d" % count_parameters(model))
