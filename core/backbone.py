@@ -116,9 +116,6 @@ class Backbone_RGB(nn.Module):
         image1 = 2 * image1 - 1.0
         image2 = 2 * image2 - 1.0
 
-        # print(torch.min(image1), torch.max(image1))
-        # print(torch.min(image2), torch.max(image2))
-
         image1 = image1.contiguous()
         image2 = image2.contiguous()
 
@@ -132,10 +129,6 @@ class Backbone_RGB(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
-
-        # visualize_distinctiveness_map(fmap1, fmap2, f"visualization/distinctiveness/baseline/{idx}")
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"visualization/feature/{idx}_fmap1")
-        # feature_visualizer(fmap2[0, ...].cpu().detach().numpy(), f"visualization/feature/{idx}_fmap2")
 
         if self.args.alternate_corr:
             corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
@@ -159,7 +152,6 @@ class Backbone_RGB(nn.Module):
             coords1 = coords1.detach()
 
             corr = corr_fn(coords1)  # index correlation volume Bx(9x9x4)xH/8xW/8
-            # feature_visualizer(corr[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_corr")
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
@@ -276,9 +268,6 @@ class Backbone_Event(nn.Module):
         image1 = 2 * image1 - 1.0
         image2 = 2 * image2 - 1.0
 
-        # print(torch.min(image1), torch.max(image1))
-        # print(torch.min(image2), torch.max(image2))
-
         image1 = image1.contiguous()
         image2 = image2.contiguous()
 
@@ -292,10 +281,6 @@ class Backbone_Event(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
-
-        # visualize_distinctiveness_map(fmap1, fmap2, f"visualization/distinctiveness/baseline/{idx}")
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"visualization/feature/{idx}_fmap1")
-        # feature_visualizer(fmap2[0, ...].cpu().detach().numpy(), f"visualization/feature/{idx}_fmap2")
 
         if self.args.alternate_corr:
             corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
@@ -320,7 +305,6 @@ class Backbone_Event(nn.Module):
             coords1 = coords1.detach()
 
             corr = corr_fn(coords1)  # index correlation volume Bx(9x9x4)xH/8xW/8
-            # feature_visualizer(corr[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_corr")
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
@@ -411,7 +395,6 @@ class EdgeDetector(torch.nn.Module):
 
     def forward(self, tenInput):
         tenInput = tenInput * 255.0
-        # tenInput = tenInput - torch.tensor(data=[104.00698793, 116.66876762, 122.67891434], dtype=tenInput.dtype, device=tenInput.device).view(1, 3, 1, 1)
 
         tenVggOne = self.netVggOne(tenInput)    # Bx64xHxW
         tenVggTwo = self.netVggTwo(tenVggOne)   # Bx128xH/2xW/2
@@ -548,9 +531,6 @@ class Backbone_Edge(nn.Module):
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
 
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap1")
-        # feature_visualizer(fmap2[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap2")
-
         if self.args.alternate_corr:
             corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
         else:
@@ -573,7 +553,6 @@ class Backbone_Edge(nn.Module):
             coords1 = coords1.detach()
 
             corr = corr_fn(coords1)  # index correlation volume Bx(9x9x4)xH/8xW/8
-            # feature_visualizer(corr[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_corr")
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):
@@ -717,9 +696,6 @@ class Backbone_Edge_FF(nn.Module):
         hdim = self.hidden_dim
         cdim = self.context_dim
 
-        # print(torch.max(image1), torch.min(image1))
-        # print(torch.max(image2), torch.min(image2), torch.sum(image2))
-
         image1 = image1.contiguous()
         image2 = image2.contiguous()
         image1 = 2 * image1 - 1.0
@@ -733,10 +709,6 @@ class Backbone_Edge_FF(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
-
-        # visualize_distinctiveness_map(fmap1, fmap2, f"visualization/distinctiveness/ours/{idx}")
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"visualization/feature/{idx}_fmap1")
-        # feature_visualizer(fmap2[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap2")
 
         if self.args.alternate_corr:
             corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
@@ -924,9 +896,6 @@ class Backbone_Edge_FF_Iter(nn.Module):
         image1 = 2 * image1 - 1.0
         image2 = 2 * image2 - 1.0
 
-        # edge_input = edge_input.contiguous()
-        # edge_input = 2 * edge_input - 1.0
-
         # run the feature network
         with autocast(enabled=self.args.mixed_precision):
             fmap1, edge_feature_list = self.fnet_lidar(image1, edge_input)
@@ -934,9 +903,6 @@ class Backbone_Edge_FF_Iter(nn.Module):
 
         fmap1 = fmap1.float()
         fmap2 = fmap2.float()
-
-        # feature_visualizer(fmap1[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap1")
-        # feature_visualizer(fmap2[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_fmap2")
 
         if self.args.alternate_corr:
             corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
@@ -1436,7 +1402,6 @@ class Backbone_Fuse(nn.Module):
             coords1 = coords1.detach()
 
             corr = corr_fn(coords1)  # index correlation volume Bx(9x9x4)xH/8xW/8
-            # feature_visualizer(corr[0, ...].cpu().detach().numpy(), f"/home/eason/WorkSpace/EventbasedVisualLocalization/EVLoc_Reconstruction/visualization/feature/{idx}_corr")
 
             flow = coords1 - coords0
             with autocast(enabled=self.args.mixed_precision):

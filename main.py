@@ -166,7 +166,6 @@ def train(args, TrainImgLoader, model, optimizer, scheduler, scaler, logger, dev
                     it_weight = 0.8 ** (args.iteration_num - it - 1)
                     loss += (alpha * loss_flow + beta * loss_edge) * it_weight
 
-                    # depth2edge_input = depth2edge_input * depth2edge_preds[-1]
                     depth2edge_input = depth2edge_preds[-1]
 
                 cv2.imwrite(f'./visualization/{args.backbone}/train/{i_batch:05d}_2_3_depth2edge_pred_{args.iteration_num}.png', (depth2edge_input[0, 0, ...].cpu().detach().numpy()* 255).astype(np.uint8))

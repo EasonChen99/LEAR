@@ -35,8 +35,6 @@ if __name__ == '__main__':
 
     data = h5py.File(data_path,'r')
     prophesee_left_T_lidar = torch.tensor(data["/ouster/calib/T_to_prophesee_left"], device=device, dtype=torch.float32)
-    # print(prophesee_left_T_lidar) 
-    # sys.exit()
 
     # # pose load
     poses = h5py.File(pose_path,'r')
