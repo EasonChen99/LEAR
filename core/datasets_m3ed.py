@@ -227,12 +227,6 @@ class DatasetM3ED(Dataset):
             elif dir in ['falcon_outdoor_night_high_beams']:
                 left = 280
                 right = 100
-            # elif dir in ['falcon_outdoor_day_fast_flight_1']:
-            #     left = 210
-            #     right = 100
-            # elif dir in ['falcon_outdoor_day_fast_flight_2']:
-            #     left = 480
-            #     right = 90
             elif dir in ['falcon_forest_into_forest_1']:
                 left = 440
                 right = 480
@@ -281,12 +275,6 @@ class DatasetM3ED(Dataset):
             elif dir in ['car_forest_into_ponds_short']:
                 left = 40
                 right = 180
-            # elif dir in ['spot_outdoor_day_srt_under_bridge_1']:
-            #     left = 208
-            #     right = 200
-            # elif dir in ['spot_outdoor_day_srt_under_bridge_2']:
-            #     left = 90
-            #     right = 100                
             else:
                 raise "Sequence doesn't exist in the list"
 

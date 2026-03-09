@@ -29,7 +29,7 @@ if __name__ == '__main__':
     pose_path = os.path.join(args.dataset, "original", args.platform, args.sequence, args.sequence+"_pose_gt.h5")
     pc_path = os.path.join(args.dataset, "original", args.platform, args.sequence, args.sequence+"_global.pcd")
 
-    out_path = os.path.join(args.save_dir, "generated", args.platform, args.sequence, "local_maps")
+    out_path = os.path.join(args.save_dir, "generated_PoseTracking", args.platform, args.sequence, "local_maps")
     if not os.path.exists(out_path):
         os.mkdir(out_path)
 

@@ -549,6 +549,9 @@ class Backbone_Edge_FF(nn.Module):
         image1 = 2 * image1 - 1.0
         image2 = 2 * image2 - 1.0
 
+        # print(torch.max(image1), torch.min(image1))
+        # print(torch.max(image2), torch.min(image2))
+
         # run the feature network
         with autocast(enabled=self.args.mixed_precision):
             fmap1, edge_feature_list = self.fnet_lidar(image1)

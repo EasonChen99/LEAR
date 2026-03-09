@@ -36,6 +36,8 @@ python tools/event2frame.py --dataset [PATH_TO_DATA] --sequence [SPECIFIED_SEQUE
 ```
 
 ## Demos
+A pretrained model can be downloaded from [google drive](https://drive.google.com/file/d/1i9sFaYv0vjfUSKQHI5jJewPYyRsGUy1K/view?usp=sharing)
+
 You can demo a trained model on a sequence of frames
 ```Shell
 python main.py --ev_input ours_denoise_stc_trail_pre_100000_half --backbone edge --load_checkpoints checkpoints/checkpoint.pth --use_feature_fusion -e

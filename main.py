@@ -162,7 +162,6 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         T_err = sample['tr_error']
         R_err = sample['rot_error']
 
-
         data_generate = Data_preprocess(calib, occlusion_threshold, occlusion_kernel)
         # M3ED Half Resolution
         crop_h, crop_w, crop_x, crop_y = 288, 512, 36, 64
@@ -176,6 +175,7 @@ def test(args, TestImgLoader, model, device, occlusion_kernel=5, occlusion_thres
         # crop_h, crop_w, crop_x, crop_y = 360, 480, 60, 80
         if args.backbone == "baseline":
             event_input, depth_input, flow_gt = data_generate.push(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
+
         elif args.backbone == "edge":
             event_input, depth_input, flow_gt, depth2edge_gt = data_generate.push_fuse(event_frame, pc, T_err, R_err, device, MAX_DEPTH=args.max_depth, split='test', h=crop_h, w=crop_w)
             depth_input = depth_input[:, 0, :, :].unsqueeze(1)
